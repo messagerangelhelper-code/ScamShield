@@ -1,0 +1,16 @@
+ScamShield/
+├── README.md
+├── .gitignore
+├── .env.example
+│
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── SECURITY.md
+│   ├── REPORTING.md
+│   └── PRIVACY.md
+│
+├── app/
+├── backend/
+├── database/
+├── integrations/
+└── tests/
