@@ -1,6 +1,5 @@
-
 import { useState } from "react";
-import { analyzeScam } from "../services/analyzeScam";
+import { scamAnalysis } from "../services/scamAnalysis";
 import RiskResult from "./RiskResult";
 
 function ScamCheck() {
@@ -13,7 +12,7 @@ function ScamCheck() {
       return;
     }
 
-    const analysis = analyzeScam(text);
+    const analysis = scamAnalysis(text);
     setResult(analysis);
   }
 
@@ -22,8 +21,8 @@ function ScamCheck() {
       <h2>Check Something Suspicious</h2>
 
       <p>
-        Paste a suspicious message, website, phone number, username,
-        email, or cryptocurrency address for analysis.
+        Paste a suspicious message, website, phone number, email,
+        username, or cryptocurrency address for analysis.
       </p>
 
       <textarea
@@ -39,7 +38,7 @@ function ScamCheck() {
         Analyze for Scams
       </button>
 
-      <RiskResult result={result} />
+      {result && <RiskResult result={result} />}
     </section>
   );
 }
