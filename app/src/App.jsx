@@ -1,22 +1,20 @@
+import Dashboard from "./components/Dashboard";
+import ScamCheck from "./components/ScamCheck";
+
 function App() {
   return (
     <main>
       <header>
         <h1>ScamShield</h1>
-        <p>Protect yourself from scams.</p>
+        <p>
+          AI-powered scam detection, evidence collection,
+          and fraud reporting assistance.
+        </p>
       </header>
 
-      <section>
-        <h2>Check Something Suspicious</h2>
-        <p>
-          Analyze a message, website, phone number, email, username,
-          or cryptocurrency address.
-        </p>
+      <Dashboard />
 
-        <button type="button">
-          Start Scam Check
-        </button>
-      </section>
+      <ScamCheck />
     </main>
   );
 }
