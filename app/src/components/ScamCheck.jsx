@@ -1,18 +1,20 @@
+
 import { useState } from "react";
+import { analyzeScam } from "../services/analyzeScam";
+import RiskResult from "./RiskResult";
 
 function ScamCheck() {
-  const [input, setInput] = useState("");
-  const [result, setResult] = useState("");
+  const [text, setText] = useState("");
+  const [result, setResult] = useState(null);
 
-  function analyzeScam() {
-    if (!input.trim()) {
-      setResult("Please enter something to analyze.");
+  function handleAnalyze() {
+    if (!text.trim()) {
+      setResult(null);
       return;
     }
 
-    setResult(
-      "Analysis ready. ScamShield will examine this information for suspicious indicators."
-    );
+    const analysis = analyzeScam(text);
+    setResult(analysis);
   }
 
   return (
@@ -20,24 +22,24 @@ function ScamCheck() {
       <h2>Check Something Suspicious</h2>
 
       <p>
-        Paste a suspicious message, website, phone number, email, username,
-        or cryptocurrency address for analysis.
+        Paste a suspicious message, website, phone number, username,
+        email, or cryptocurrency address for analysis.
       </p>
 
       <textarea
+        value={text}
+        onChange={(event) => setText(event.target.value)}
         placeholder="Paste suspicious content here..."
         rows="8"
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
       />
 
       <br />
 
-      <button type="button" onClick={analyzeScam}>
+      <button type="button" onClick={handleAnalyze}>
         Analyze for Scams
       </button>
 
-      {result && <p>{result}</p>}
+      <RiskResult result={result} />
     </section>
   );
 }
