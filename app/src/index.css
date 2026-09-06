@@ -1,64 +1,93 @@
-:root {
-  font-family: Arial, sans-serif;
-  color: #1f2937;
-  background: #f4f7fb;
-}
-
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  min-width: 320px;
+  font-family: Arial, sans-serif;
+  background: #f4f7fb;
+  color: #1f2937;
 }
 
 main {
   max-width: 900px;
   margin: 0 auto;
-  padding: 40px 20px;
+  padding: 24px;
 }
 
 header {
-  margin-bottom: 32px;
+  background: #111827;
+  color: white;
+  padding: 28px;
+  border-radius: 16px;
+  margin-bottom: 24px;
 }
 
 header h1 {
   margin: 0 0 8px;
-  font-size: 36px;
+  font-size: 32px;
 }
 
 header p {
   margin: 0;
-  font-size: 18px;
+  line-height: 1.5;
+  color: #d1d5db;
 }
 
 section {
   background: white;
-  padding: 28px;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  padding: 24px;
+  margin-bottom: 20px;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
-section h2 {
+h2 {
   margin-top: 0;
 }
 
-section p {
-  line-height: 1.6;
-}
-
 button {
-  margin-top: 16px;
-  padding: 12px 20px;
-  border: 0;
-  border-radius: 8px;
-  background: #1f2937;
+  background: #2563eb;
   color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 8px;
   font-size: 16px;
   cursor: pointer;
 }
 
 button:hover {
-  opacity: 0.9;
+  background: #1d4ed8;
+}
+
+textarea,
+input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+ul {
+  line-height: 1.8;
+}
+
+@media (max-width: 600px) {
+  main {
+    padding: 14px;
+  }
+
+  header {
+    padding: 20px;
+  }
+
+  header h1 {
+    font-size: 26px;
+  }
+
+  section {
+    padding: 18px;
+  }
 }
