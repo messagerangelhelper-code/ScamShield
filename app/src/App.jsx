@@ -1,6 +1,6 @@
 import Dashboard from "./components/Dashboard";
 import ScamCheck from "./components/ScamCheck";
-
+import Subscriptions from "./pages/Subscriptions";
 function App() {
   return (
     <main>
@@ -15,6 +15,7 @@ function App() {
       <Dashboard />
 
       <ScamCheck />
+      <Subscriptions />
     </main>
   );
 }
