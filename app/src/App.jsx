@@ -1,5 +1,8 @@
 import Dashboard from "./components/Dashboard";
 import ScamCheck from "./components/ScamCheck";
+import CryptoCheck from "./components/CryptoCheck";
+import IC3Report from "./components/IC3Report";
+import PricingPlans from "./components/PricingPlans";
 
 function App() {
   return (
@@ -13,16 +16,12 @@ function App() {
       </header>
 
       <Dashboard />
-<ScamCheck />
-
-
-
-</main>
       <ScamCheck />
-      
+      <CryptoCheck />
+      <IC3Report />
+      <PricingPlans />
     </main>
   );
 }
 
 export default App;
-      in
