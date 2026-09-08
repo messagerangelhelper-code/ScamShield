@@ -1,5 +1,3 @@
-mkdir -p app/src/utils
-cat > app/src/utils/usageTracker.js << 'EOF'
 const KEY = "scamshield_usage";
 const FREE_LIMIT = 3;
 
@@ -26,4 +24,3 @@ export function remainingChecks() {
   const { count, premium } = getUsage();
   return premium ? Infinity : Math.max(0, FREE_LIMIT - count);
 }
-EOF
