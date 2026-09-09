@@ -3,6 +3,8 @@ import ScamCheck from "./components/ScamCheck";
 import CryptoCheck from "./components/CryptoCheck";
 import IC3Report from "./components/IC3Report";
 import PricingPlans from "./components/PricingPlans";
+import SeniorMode from "./components/SeniorMode";
+import InsuranceCheck from "./components/InsuranceCheck";
 
 function App() {
   return (
@@ -15,9 +17,11 @@ function App() {
         </p>
       </header>
 
+      <SeniorMode />
       <Dashboard />
       <ScamCheck />
       <CryptoCheck />
+      <InsuranceCheck />
       <IC3Report />
       <PricingPlans />
     </main>
