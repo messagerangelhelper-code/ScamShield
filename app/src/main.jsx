@@ -1,13 +1,7 @@
-import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App.jsx'
-import ErrorBoundary from './ErrorBoundary.jsx'
-import './index.css'
 
 createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </StrictMode>,
+  <h1 style={{ padding: '40px', fontFamily: 'sans-serif', color: 'red' }}>
+    ScamShield TEST - if you see this, React is working
+  </h1>
 )
