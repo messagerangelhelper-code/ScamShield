@@ -15,6 +15,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",   # Vite dev server
         "https://scamshield.global",
+        "*",  # TEMP: allow all origins until the frontend URL is confirmed, then narrow this back down
     ],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,6 +86,15 @@ RED_FLAGS = {
         "phrases": ["open a new bank account", "open a new account for this"],
         "weight": 30,
         "message": "Asks you to open a new account — a common fund-laundering tactic",
+    },
+    "insurance_fraud": {
+        "phrases": ["pay your deductible now", "wire the deductible",
+                    "policy will be cancelled unless you pay", "reactivate your medicare",
+                    "confirm your medicare number", "guaranteed approval no medical exam",
+                    "processing fee before we release your claim", "claims adjuster needs payment",
+                    "send the deductible by gift card", "verify your social security to keep coverage"],
+        "weight": 30,
+        "message": "Matches a common insurance-fraud pattern — real insurers never require upfront payment to process a claim or ask you to pay a deductible directly to an agent",
     },
 }
 
