@@ -1,7 +1,5 @@
-import { createRoot } from 'react-dom/client'
+import { createRoot } from "react-dom/client";
+import App from "./App";
+import "./index.css";
 
-createRoot(document.getElementById('root')).render(
-  <h1 style={{ padding: '40px', fontFamily: 'sans-serif', color: 'red' }}>
-    ScamShield TEST - if you see this, React is working
-  </h1>
-)
+createRoot(document.getElementById("root")).render(<App />);
