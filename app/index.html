@@ -11,6 +11,9 @@
   </head>
   <body>
     <div id="root">PLAIN HTML TEST - if you see this text, index.html loaded but JavaScript did not run</div>
+    <script>
+      document.getElementById('root').innerText = 'INLINE JS WORKED - basic JavaScript execution is fine';
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
