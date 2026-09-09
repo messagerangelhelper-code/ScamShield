@@ -16,19 +16,13 @@
     </script>
     <script src="/test.js"></script>
     <script>
-      fetch('/assets/index-CBu4QuZa.js')
-        .then(function (r) {
-          var status = r.status;
-          var contentType = r.headers.get('content-type');
-          return r.text().then(function (text) {
-            document.getElementById('root').innerText =
-              'FETCH RESULT - Status: ' + status +
-              ' | Content-Type: ' + contentType +
-              ' | First 150 chars: ' + text.slice(0, 150);
-          });
+      fetch('/')
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          document.getElementById('root').innerText = 'RAW HTML: ' + html;
         })
         .catch(function (e) {
-          document.getElementById('root').innerText = 'FETCH ERROR: ' + e.message;
+          document.getElementById('root').innerText = 'HTML FETCH ERROR: ' + e.message;
         });
     </script>
     <script type="module" src="/src/main.jsx"></script>
