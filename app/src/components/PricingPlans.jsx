@@ -1,7 +1,7 @@
-cat > app/src/components/PricingPlans.jsx << 'EOF'
 import { useEffect, useState } from "react";
 import { getUsage } from "../utils/usageTracker";
 
+// Swap this for your real PayPal Client ID (from developer.paypal.com)
 const PAYPAL_CLIENT_ID = "YOUR_PAYPAL_CLIENT_ID";
 
 function PricingPlans() {
@@ -17,22 +17,35 @@ function PricingPlans() {
 
   useEffect(() => {
     if (isPremium || sdkLoaded) return;
+    if (PAYPAL_CLIENT_ID === "YOUR_PAYPAL_CLIENT_ID") return; // no real ID yet, skip loading
+
     const script = document.createElement("script");
     script.src = `https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&vault=true&intent=subscription`;
     script.onload = () => setSdkLoaded(true);
+    script.onerror = () => console.error("PayPal SDK failed to load");
     document.body.appendChild(script);
-    return () => document.body.removeChild(script);
+
+    return () => {
+      if (document.body.contains(script)) document.body.removeChild(script);
+    };
   }, [isPremium, sdkLoaded]);
 
   useEffect(() => {
     if (!sdkLoaded || !window.paypal) return;
+
     window.paypal
       .Buttons({
         style: { shape: "rect", color: "blue", layout: "vertical", label: "subscribe" },
         createSubscription: function (data, actions) {
-          return actions.subscription.create({ plan_id: "YOUR_PAYPAL_PLAN_ID" });
+          // Replace with your actual PayPal Plan ID created in the PayPal dashboard
+          return actions.subscription.create({
+            plan_id: "YOUR_PAYPAL_PLAN_ID",
+          });
         },
         onApprove: function (data) {
+          // NOTE: This only marks premium locally in the browser.
+          // For real enforcement, verify data.subscriptionID against
+          // your backend and PayPal's API before granting access.
           const stored = JSON.parse(localStorage.getItem("scamshield_usage")) || {};
           stored.premium = true;
           stored.subscriptionId = data.subscriptionID;
@@ -55,7 +68,10 @@ function PricingPlans() {
   return (
     <section className="pricing-plans">
       <h2>Plans</h2>
-      <p className="subtext">You've used {usage} of 3 free checks.</p>
+      <p className="subtext">
+        You've used {usage} of 3 free checks.
+      </p>
+
       <div className="plans-row">
         <div className="plan-card">
           <h3>Free</h3>
@@ -65,6 +81,7 @@ function PricingPlans() {
             <li>Basic red-flag scoring</li>
           </ul>
         </div>
+
         <div className="plan-card highlight">
           <h3>Premium</h3>
           <p className="price">$9.99<span>/mo</span></p>
@@ -75,7 +92,13 @@ function PricingPlans() {
             <li>Senior protection mode</li>
             <li>Priority updates to scam pattern database</li>
           </ul>
-          <div id="paypal-button-container"></div>
+          <div id="paypal-button-container">
+            {PAYPAL_CLIENT_ID === "YOUR_PAYPAL_CLIENT_ID" && (
+              <p className="subtext">
+                (Payment setup coming soon)
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </section>
@@ -83,4 +106,3 @@ function PricingPlans() {
 }
 
 export default PricingPlans;
-EOF
