@@ -15,6 +15,22 @@
       document.getElementById('root').innerText = 'INLINE JS WORKED - basic JavaScript execution is fine';
     </script>
     <script src="/test.js"></script>
+    <script>
+      fetch('/assets/index-CBu4QuZa.js')
+        .then(function (r) {
+          var status = r.status;
+          var contentType = r.headers.get('content-type');
+          return r.text().then(function (text) {
+            document.getElementById('root').innerText =
+              'FETCH RESULT - Status: ' + status +
+              ' | Content-Type: ' + contentType +
+              ' | First 150 chars: ' + text.slice(0, 150);
+          });
+        })
+        .catch(function (e) {
+          document.getElementById('root').innerText = 'FETCH ERROR: ' + e.message;
+        });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
