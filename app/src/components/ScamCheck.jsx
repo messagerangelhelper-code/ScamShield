@@ -34,6 +34,38 @@ function ScamCheck() {
       if (!res.ok) throw new Error("Server error, please try again.");
 
       const data = await res.json();
+
+      // Also check any URLs found in the pasted text against Google Safe Browsing
+      const urlPattern = /https?:\/\/[^\s]+/g;
+      const foundUrls = input.match(urlPattern) || [];
+
+      if (foundUrls.length > 0) {
+        try {
+          const urlRes = await fetch(`${API_URL}/api/url-check`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ urls: foundUrls }),
+          });
+          const urlData = await urlRes.json();
+
+          if (urlData.configured && urlData.flagged_urls.length > 0) {
+            data.flags = [
+              ...data.flags,
+              `This link is on Google's known scam/phishing list: ${urlData.flagged_urls[0]}`,
+            ];
+            data.risk_score = Math.min(100, data.risk_score + 40);
+            data.risk_level = data.risk_score >= 50 ? "high" : data.risk_level;
+          } else if (!urlData.configured) {
+            data.flags = [
+              ...data.flags,
+              "Link detected but URL-reputation checking isn't set up yet — verify this link manually before clicking.",
+            ];
+          }
+        } catch {
+          // Safe Browsing check failing shouldn't block the rest of the result
+        }
+      }
+
       setResult(data);
       recordCheck();
 
