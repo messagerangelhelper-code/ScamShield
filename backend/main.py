@@ -47,6 +47,17 @@ PUBLICAML_URL = "https://intelapi.publicaml.org/v1/enrich"
 GOOGLE_SAFE_BROWSING_API_KEY = os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY", "REPLACE_WITH_REAL_KEY")
 SAFE_BROWSING_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
 
+# --- VirusTotal config ---
+# Free tier: 4 requests/minute. Get a key at: https://www.virustotal.com/gui/join-us
+VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "REPLACE_WITH_REAL_KEY")
+VIRUSTOTAL_URL = "https://www.virustotal.com/api/v3/urls"
+
+# --- PhishTank config ---
+# Free, community-reported phishing database. App key is optional but
+# recommended for higher rate limits: https://www.phishtank.com/api_register.php
+PHISHTANK_API_KEY = os.environ.get("PHISHTANK_API_KEY", "")
+PHISHTANK_URL = "https://checkurl.phishtank.com/checkurl/"
+
 # --- Decoy card provider config ---
 # The real key lives in a local .env file (never committed) or your
 # hosting provider's environment variable settings — never in this file.
@@ -277,44 +288,104 @@ async def decoy_card_webhook(payload: dict):
 @app.post("/api/url-check")
 async def check_urls(payload: URLCheckRequest):
     """
-    Checks URLs against Google Safe Browsing's free database of known
-    phishing, malware, and scam sites. Requires GOOGLE_SAFE_BROWSING_API_KEY
-    to be set; otherwise returns configured: False so the frontend knows
-    to skip URL-specific results gracefully.
+    Checks URLs against three independent free/low-cost sources, since no
+    single database catches everything — especially brand-new scam sites
+    that haven't been reported anywhere yet:
+      - Google Safe Browsing (malware, phishing, unwanted software)
+      - VirusTotal (aggregates 70+ security engines' verdicts)
+      - PhishTank (community-reported phishing, often faster on new scams)
+
+    Returns which sources are actually configured, and a combined verdict.
+    A URL is flagged if ANY configured source flags it.
     """
-    if GOOGLE_SAFE_BROWSING_API_KEY == "REPLACE_WITH_REAL_KEY" or not payload.urls:
-        return {"configured": False, "flagged_urls": []}
+    if not payload.urls:
+        return {"configured": False, "flagged_urls": [], "sources_checked": []}
 
-    body = {
-        "client": {"clientId": "scamshield", "clientVersion": "1.0.0"},
-        "threatInfo": {
-            "threatTypes": [
-                "MALWARE",
-                "SOCIAL_ENGINEERING",
-                "UNWANTED_SOFTWARE",
-                "POTENTIALLY_HARMFUL_APPLICATION",
-            ],
-            "platformTypes": ["ANY_PLATFORM"],
-            "threatEntryTypes": ["URL"],
-            "threatEntries": [{"url": u} for u in payload.urls],
-        },
-    }
+    url = payload.urls[0]  # primary URL for VirusTotal/PhishTank single-URL checks
+    sources_checked = []
+    flagged_urls = set()
+    details = {}
 
+    # --- Google Safe Browsing ---
+    if GOOGLE_SAFE_BROWSING_API_KEY != "REPLACE_WITH_REAL_KEY":
+        sources_checked.append("Google Safe Browsing")
+        body = {
+            "client": {"clientId": "scamshield", "clientVersion": "1.0.0"},
+            "threatInfo": {
+                "threatTypes": [
+                    "MALWARE", "SOCIAL_ENGINEERING",
+                    "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION",
+                ],
+                "platformTypes": ["ANY_PLATFORM"],
+                "threatEntryTypes": ["URL"],
+                "threatEntries": [{"url": u} for u in payload.urls],
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{SAFE_BROWSING_URL}?key={GOOGLE_SAFE_BROWSING_API_KEY}", json=body
+                )
+                resp.raise_for_status()
+                matches = resp.json().get("matches", [])
+                for m in matches:
+                    flagged_urls.add(m["threat"]["url"])
+                details["safe_browsing"] = {"flagged": len(matches) > 0}
+        except httpx.HTTPError:
+            details["safe_browsing"] = {"error": "unreachable"}
+
+    # --- VirusTotal ---
+    if VIRUSTOTAL_API_KEY != "REPLACE_WITH_REAL_KEY":
+        sources_checked.append("VirusTotal")
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                # Submit the URL for analysis
+                submit_resp = await client.post(
+                    VIRUSTOTAL_URL,
+                    headers={"x-apikey": VIRUSTOTAL_API_KEY},
+                    data={"url": url},
+                )
+                submit_resp.raise_for_status()
+                analysis_id = submit_resp.json()["data"]["id"]
+
+                # Fetch the analysis result
+                result_resp = await client.get(
+                    f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
+                    headers={"x-apikey": VIRUSTOTAL_API_KEY},
+                )
+                result_resp.raise_for_status()
+                stats = result_resp.json()["data"]["attributes"]["stats"]
+                malicious = stats.get("malicious", 0)
+                suspicious = stats.get("suspicious", 0)
+
+                if malicious > 0 or suspicious > 0:
+                    flagged_urls.add(url)
+                details["virustotal"] = {
+                    "malicious_votes": malicious,
+                    "suspicious_votes": suspicious,
+                }
+        except (httpx.HTTPError, KeyError):
+            details["virustotal"] = {"error": "unreachable or rate-limited"}
+
+    # --- PhishTank ---
+    sources_checked.append("PhishTank")  # works without a key, just lower rate limit
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                f"{SAFE_BROWSING_URL}?key={GOOGLE_SAFE_BROWSING_API_KEY}", json=body
-            )
+            form_data = {"url": url, "format": "json"}
+            if PHISHTANK_API_KEY:
+                form_data["app_key"] = PHISHTANK_API_KEY
+            resp = await client.post(PHISHTANK_URL, data=form_data)
             resp.raise_for_status()
-            data = resp.json()
+            result = resp.json().get("results", {})
+            if result.get("in_database") and result.get("valid"):
+                flagged_urls.add(url)
+            details["phishtank"] = {"in_database": result.get("in_database", False)}
     except httpx.HTTPError:
-        return {
-            "configured": True,
-            "error": "Could not reach Safe Browsing API",
-            "flagged_urls": [],
-        }
+        details["phishtank"] = {"error": "unreachable"}
 
-    matches = data.get("matches", [])
-    flagged_urls = list({m["threat"]["url"] for m in matches})
-
-    return {"configured": True, "flagged_urls": flagged_urls, "matches": matches}
+    return {
+        "configured": len(sources_checked) > 0,
+        "sources_checked": sources_checked,
+        "flagged_urls": list(flagged_urls),
+        "details": details,
+    }
