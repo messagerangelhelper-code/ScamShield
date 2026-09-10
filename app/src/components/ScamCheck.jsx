@@ -2,6 +2,7 @@ import { useState } from "react";
 import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
 import { isSeniorMode } from "./SeniorMode";
 import DecoyCard from "./DecoyCard";
+import VoiceInput from "./VoiceInput";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -89,6 +90,7 @@ function ScamCheck() {
       <h2>Check a Message or Listing</h2>
       <p className="subtext">{remainingChecks()} free checks remaining</p>
       <form onSubmit={handleCheck}>
+        <VoiceInput onResult={(text) => setInput((prev) => prev + text)} />
         <textarea
           rows={6}
           placeholder="Paste a suspicious listing, message, or offer here..."
