@@ -1,26 +1,33 @@
+import { useState, useEffect } from "react";
+
 function Dashboard() {
+  const [stats, setStats] = useState({
+    checksRun: 0,
+    scamsFlagged: 0,
+  });
+
+  useEffect(() => {
+    // Reads from localStorage for now — swap for a real API call
+    // once the backend has a /api/stats endpoint.
+    const saved = JSON.parse(localStorage.getItem("scamshield_stats")) || {
+      checksRun: 0,
+      scamsFlagged: 0,
+    };
+    setStats(saved);
+  }, []);
+
   return (
-    <section>
-      <h2>ScamShield Dashboard</h2>
-
-      <p>
-        Analyze suspicious activity, organize evidence,
-        and prepare reports.
-      </p>
-
-      <div>
-        <h3>🔎 Scam Detection</h3>
-        <p>Check suspicious messages, links, accounts, and payments.</p>
-      </div>
-
-      <div>
-        <h3>📁 Evidence</h3>
-        <p>Organize information and supporting evidence.</p>
-      </div>
-
-      <div>
-        <h3>📋 Reporting</h3>
-        <p>Prepare structured information for appropriate reporting channels.</p>
+    <section className="dashboard">
+      <h2>Your Protection Dashboard</h2>
+      <div className="stats-row">
+        <div className="stat-card">
+          <span className="stat-number">{stats.checksRun}</span>
+          <span className="stat-label">Checks Run</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-number">{stats.scamsFlagged}</span>
+          <span className="stat-label">Scams Flagged</span>
+        </div>
       </div>
     </section>
   );
