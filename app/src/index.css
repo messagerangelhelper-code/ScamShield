@@ -34,6 +34,13 @@ header h1 {
   font-size: 32px;
 }
 
+.domain-badge {
+  font-size: 18px;
+  font-weight: normal;
+  color: #b31942;
+  opacity: 0.9;
+}
+
 header p {
   margin: 0;
   line-height: 1.5;
@@ -303,6 +310,35 @@ body.senior-mode section {
   font-size: 15px;
   line-height: 1.7;
   color: #444;
+}
+
+.admin-reset {
+  border: 2px dashed #999;
+  background: #f0f0f0;
+}
+
+.admin-reset button {
+  background: #666;
+}
+
+.admin-reset button:hover {
+  background: #444;
+}
+
+.voice-button {
+  display: block;
+  width: 100%;
+  background: #2e7d32;
+  margin-bottom: 10px;
+}
+
+.voice-button:hover {
+  background: #1b5e20;
+}
+
+body.senior-mode .voice-button {
+  font-size: 20px;
+  padding: 18px;
 }
 
 @media (max-width: 600px) {
