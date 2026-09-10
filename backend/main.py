@@ -35,7 +35,17 @@ class DecoyCardRequest(BaseModel):
     reason: str = "prepaid_card_scam"  # what triggered the request, for your own logs
 
 
+class URLCheckRequest(BaseModel):
+    urls: list[str]
+
+
 PUBLICAML_URL = "https://intelapi.publicaml.org/v1/enrich"
+
+# --- Google Safe Browsing config ---
+# Free tier: 10,000 requests/day. Get a key at:
+# https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com
+GOOGLE_SAFE_BROWSING_API_KEY = os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY", "REPLACE_WITH_REAL_KEY")
+SAFE_BROWSING_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
 
 # --- Decoy card provider config ---
 # The real key lives in a local .env file (never committed) or your
@@ -95,6 +105,14 @@ RED_FLAGS = {
                     "send the deductible by gift card", "verify your social security to keep coverage"],
         "weight": 30,
         "message": "Matches a common insurance-fraud pattern — real insurers never require upfront payment to process a claim or ask you to pay a deductible directly to an agent",
+    },
+    "charity_scam": {
+        "phrases": ["donate now to help victims", "urgent disaster relief donation",
+                    "wire your donation", "send your donation by gift card",
+                    "100% of your donation", "tax deductible donation today only",
+                    "help the families affected", "disaster relief fund needs your help now"],
+        "weight": 25,
+        "message": "Matches a common charity-scam pattern — legitimate charities never pressure urgent donations or ask for gift cards/wire transfers",
     },
 }
 
@@ -254,3 +272,49 @@ async def decoy_card_webhook(payload: dict):
         "attempted_amount": payload.get("amount"),
         "status": payload.get("result"),  # e.g. "DECLINED"
     }
+
+
+@app.post("/api/url-check")
+async def check_urls(payload: URLCheckRequest):
+    """
+    Checks URLs against Google Safe Browsing's free database of known
+    phishing, malware, and scam sites. Requires GOOGLE_SAFE_BROWSING_API_KEY
+    to be set; otherwise returns configured: False so the frontend knows
+    to skip URL-specific results gracefully.
+    """
+    if GOOGLE_SAFE_BROWSING_API_KEY == "REPLACE_WITH_REAL_KEY" or not payload.urls:
+        return {"configured": False, "flagged_urls": []}
+
+    body = {
+        "client": {"clientId": "scamshield", "clientVersion": "1.0.0"},
+        "threatInfo": {
+            "threatTypes": [
+                "MALWARE",
+                "SOCIAL_ENGINEERING",
+                "UNWANTED_SOFTWARE",
+                "POTENTIALLY_HARMFUL_APPLICATION",
+            ],
+            "platformTypes": ["ANY_PLATFORM"],
+            "threatEntryTypes": ["URL"],
+            "threatEntries": [{"url": u} for u in payload.urls],
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{SAFE_BROWSING_URL}?key={GOOGLE_SAFE_BROWSING_API_KEY}", json=body
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError:
+        return {
+            "configured": True,
+            "error": "Could not reach Safe Browsing API",
+            "flagged_urls": [],
+        }
+
+    matches = data.get("matches", [])
+    flagged_urls = list({m["threat"]["url"] for m in matches})
+
+    return {"configured": True, "flagged_urls": flagged_urls, "matches": matches}
