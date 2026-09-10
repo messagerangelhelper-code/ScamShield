@@ -5,6 +5,7 @@ import IC3Report from "./components/IC3Report";
 import PricingPlans from "./components/PricingPlans";
 import SeniorMode from "./components/SeniorMode";
 import InsuranceCheck from "./components/InsuranceCheck";
+import CharityCheck from "./components/CharityCheck";
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
       <ScamCheck />
       <CryptoCheck />
       <InsuranceCheck />
+      <CharityCheck />
       <IC3Report />
       <PricingPlans />
     </main>
