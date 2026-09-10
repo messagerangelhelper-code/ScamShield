@@ -1,17 +1,21 @@
 import Dashboard from "./components/Dashboard";
 import ScamCheck from "./components/ScamCheck";
+import LinkCheck from "./components/LinkCheck";
 import CryptoCheck from "./components/CryptoCheck";
 import IC3Report from "./components/IC3Report";
 import PricingPlans from "./components/PricingPlans";
 import SeniorMode from "./components/SeniorMode";
 import InsuranceCheck from "./components/InsuranceCheck";
 import CharityCheck from "./components/CharityCheck";
+import AdminReset from "./components/AdminReset";
 
 function App() {
   return (
     <main>
       <header>
-        <h1>ScamShield</h1>
+        <h1>
+          ScamShield<span className="domain-badge">.global</span>
+        </h1>
         <p>
           AI-powered scam detection, evidence collection,
           and fraud reporting assistance.
@@ -21,11 +25,13 @@ function App() {
       <SeniorMode />
       <Dashboard />
       <ScamCheck />
+      <LinkCheck />
       <CryptoCheck />
       <InsuranceCheck />
       <CharityCheck />
       <IC3Report />
       <PricingPlans />
+      <AdminReset />
     </main>
   );
 }
