@@ -1,4 +1,5 @@
 import { useState } from "react";
+import VoiceInput from "./VoiceInput";
 
 const initialState = {
   dateOccurred: "",
@@ -114,6 +115,11 @@ the official IC3 complaint form at https://www.ic3.gov/Home/FileComplaint
 
         <label>
           What happened
+          <VoiceInput
+            onResult={(text) =>
+              setForm((prev) => ({ ...prev, description: prev.description + text }))
+            }
+          />
           <textarea
             name="description"
             rows={5}
