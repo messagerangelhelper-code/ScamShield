@@ -8,6 +8,7 @@ import SeniorMode from "./components/SeniorMode";
 import InsuranceCheck from "./components/InsuranceCheck";
 import CharityCheck from "./components/CharityCheck";
 import AdminReset from "./components/AdminReset";
+import USAFlagIcon from "./components/USAFlagIcon";
 
 function App() {
   const isAdmin = new URLSearchParams(window.location.search).get("admin") === "true";
@@ -15,9 +16,12 @@ function App() {
   return (
     <main>
       <header>
-        <h1>
-          ScamShield<span className="domain-badge">.global</span>
-        </h1>
+        <div className="header-top-row">
+          <h1>
+            ScamShield<span className="domain-badge">.global</span>
+          </h1>
+          <USAFlagIcon />
+        </div>
         <p>
           AI-powered scam detection, evidence collection,
           and fraud reporting assistance.
