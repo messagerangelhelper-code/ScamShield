@@ -10,6 +10,8 @@ import CharityCheck from "./components/CharityCheck";
 import AdminReset from "./components/AdminReset";
 
 function App() {
+  const isAdmin = new URLSearchParams(window.location.search).get("admin") === "true";
+
   return (
     <main>
       <header>
@@ -31,7 +33,7 @@ function App() {
       <CharityCheck />
       <IC3Report />
       <PricingPlans />
-      <AdminReset />
+      {isAdmin && <AdminReset />}
     </main>
   );
 }
