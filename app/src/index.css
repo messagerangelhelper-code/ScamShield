@@ -51,7 +51,7 @@ header h1 {
 }
 
 .usa-flag-icon {
-  width: 70px;
+  width: 100px;
   height: auto;
   flex-shrink: 0;
   animation: flag-wave 3s ease-in-out infinite;
