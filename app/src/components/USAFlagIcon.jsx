@@ -1,22 +1,23 @@
 function USAFlagIcon() {
+  const usaPath =
+    "M275,35 L268,50 L260,55 L268,60 L255,65 L250,70 L245,78 L248,85 " +
+    "L240,88 L245,95 L255,100 L245,108 L240,113 L225,115 L235,125 " +
+    "L238,140 L235,155 L225,148 L220,135 L222,120 L205,118 L195,122 " +
+    "L185,120 L170,125 L160,130 L140,135 L120,128 L100,120 L85,115 " +
+    "L65,110 L45,108 L35,95 L30,80 L28,65 L25,50 L30,45 L50,30 " +
+    "L90,25 L130,22 L170,20 L180,28 L190,25 L195,35 L200,50 L195,60 " +
+    "L185,50 L200,40 L210,35 L220,30 L230,32 L240,30 L255,32 Z";
+
   return (
     <svg
       className="usa-flag-icon"
-      viewBox="0 0 200 120"
+      viewBox="0 0 300 180"
       xmlns="http://www.w3.org/2000/svg"
       aria-label="United States flag silhouette"
     >
       <defs>
-        {/* Simplified continental US outline used as a clip mask */}
         <clipPath id="usaShape">
-          <path
-            d="M30,25 L45,15 L55,18 L60,12 L75,10 L85,15 L95,12
-               L110,15 L125,10 L140,14 L150,20 L160,18 L170,25
-               L175,35 L172,45 L178,55 L170,62 L172,72 L160,78
-               L155,90 L145,95 L148,105 L135,108 L125,100 L115,102
-               L100,98 L90,105 L78,100 L70,108 L60,100 L50,95
-               L45,85 L35,82 L28,72 L32,60 L25,50 L30,40 Z"
-          />
+          <path d={usaPath} />
         </clipPath>
       </defs>
 
@@ -27,24 +28,24 @@ function USAFlagIcon() {
             key={i}
             className="flag-stripe"
             x="0"
-            y={i * (120 / 7)}
-            width="200"
-            height={120 / 7 + 1}
+            y={i * (180 / 7)}
+            width="300"
+            height={180 / 7 + 1}
             fill={i % 2 === 0 ? "#b31942" : "#ffffff"}
           />
         ))}
 
         {/* Blue canton */}
-        <rect x="0" y="0" width="85" height="55" fill="#0a2647" />
+        <rect x="0" y="0" width="130" height="95" fill="#0a2647" />
 
         {/* Simplified stars grid */}
-        {Array.from({ length: 4 }).map((_, row) =>
-          Array.from({ length: 5 }).map((_, col) => (
+        {Array.from({ length: 5 }).map((_, row) =>
+          Array.from({ length: 6 }).map((_, col) => (
             <circle
               key={`${row}-${col}`}
-              cx={10 + col * 16}
-              cy={10 + row * 12}
-              r="1.6"
+              cx={14 + col * 20}
+              cy={14 + row * 17}
+              r="2.2"
               fill="#ffffff"
             />
           ))
@@ -52,18 +53,7 @@ function USAFlagIcon() {
       </g>
 
       {/* Outline for definition against the navy header background */}
-      <path
-        d="M30,25 L45,15 L55,18 L60,12 L75,10 L85,15 L95,12
-           L110,15 L125,10 L140,14 L150,20 L160,18 L170,25
-           L175,35 L172,45 L178,55 L170,62 L172,72 L160,78
-           L155,90 L145,95 L148,105 L135,108 L125,100 L115,102
-           L100,98 L90,105 L78,100 L70,108 L60,100 L50,95
-           L45,85 L35,82 L28,72 L32,60 L25,50 L30,40 Z"
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="1"
-        opacity="0.6"
-      />
+      <path d={usaPath} fill="none" stroke="#ffffff" strokeWidth="1.5" opacity="0.7" />
     </svg>
   );
 }
