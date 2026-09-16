@@ -1,3 +1,126 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0a1628;
+  color: #f0f0f0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+header {
+  padding: 24px 0;
+  border-bottom: 2px solid #b31942;
+  margin-bottom: 24px;
+}
+
+.header-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header-top-row h1 {
+  color: #ffffff;
+  font-size: 28px;
+  margin: 0;
+}
+
+.domain-badge {
+  color: #b31942;
+  font-weight: 600;
+}
+
+.usa-flag-icon {
+  width: 48px;
+  height: auto;
+  flex-shrink: 0;
+}
+
+header p {
+  color: #9aa5b8;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+h2 {
+  color: #ffffff;
+  border-left: 4px solid #b31942;
+  padding-left: 12px;
+  margin-top: 32px;
+}
+
+section {
+  background: #12213d;
+  border: 1px solid #1e3358;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+input, textarea {
+  background: #0a1628;
+  color: #f0f0f0;
+  border: 1px solid #1e3358;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #6b7690;
+}
+
+button {
+  background: #b31942;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #8f1435;
+}
+
+.stats-row {
+  display: flex;
+  gap: 16px;
+}
+
+.stat-card {
+  background: #0a1628;
+  border: 1px solid #1e3358;
+  border-radius: 12px;
+  padding: 16px;
+  flex: 1;
+  text-align: center;
+}
+
+.stat-number {
+  display: block;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #9aa5b8;
+}
+
+/* --- Freeze Credit (existing, unchanged) --- */
 .freeze-credit {
   border-radius: 16px;
   padding: 20px;
