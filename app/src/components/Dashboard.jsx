@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import FreezeCredit from "./FreezeCredit";
 
 function Dashboard() {
   const [stats, setStats] = useState({
@@ -28,6 +29,10 @@ function Dashboard() {
           <span className="stat-number">{stats.scamsFlagged}</span>
           <span className="stat-label">Scams Flagged</span>
         </div>
+      </div>
+
+      <div className="dashboard-actions">
+        <FreezeCredit />
       </div>
     </section>
   );
