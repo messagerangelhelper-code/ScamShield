@@ -4,7 +4,7 @@
 
 body {
   margin: 0;
-  background: #0a1628;
+  background: #0d1b3d;
   color: #f0f0f0;
   font-family: system-ui, -apple-system, sans-serif;
 }
@@ -12,13 +12,17 @@ body {
 main {
   max-width: 720px;
   margin: 0 auto;
-  padding: 20px;
 }
 
 header {
-  padding: 24px 0;
+  padding: 24px 20px;
   border-bottom: 2px solid #b31942;
   margin-bottom: 24px;
+  background: #0f2557;
+}
+
+section {
+  margin: 0 20px 20px 20px;
 }
 
 .header-top-row {
@@ -40,7 +44,7 @@ header {
 }
 
 .usa-flag-icon {
-  width: 48px;
+  width: 80px;
   height: auto;
   flex-shrink: 0;
 }
@@ -99,20 +103,15 @@ button:hover {
   gap: 16px;
 }
 
+.stat-
+
 .stat-card {
-  background: #0a1628;
+  background: #0d1b3d;
   border: 1px solid #1e3358;
   border-radius: 12px;
   padding: 16px;
   flex: 1;
   text-align: center;
-}
-
-.stat-number {
-  display: block;
-  font-size: 28px;
-  font-weight: 700;
-  color: #ffffff;
 }
 
 .stat-label {
