@@ -1,392 +1,76 @@
-* {
-  box-sizing: border-box;
+.freeze-credit {
+  border-radius: 16px;
+  padding: 20px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  margin-top: 24px;
 }
 
-:root {
-  --navy: #0a2647;
-  --red: #b31942;
+.freeze-credit-title {
+  color: #fff;
+  font-size: 18px;
+  margin-bottom: 8px;
 }
 
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #f4f7fb;
-  color: #1f2937;
-}
-
-main {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-header {
-  background: var(--navy);
-  color: white;
-  padding: 28px;
-  border-radius: 16px 16px 0 0;
-  margin-bottom: 24px;
-  position: relative;
-}
-
-header h1 {
-  margin: 0 0 8px;
-  font-size: 32px;
-}
-
-.header-top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.domain-badge {
-  font-size: 20px;
-  font-weight: 900;
-  color: #ff4d6d;
-  opacity: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.usa-flag-icon {
-  width: 100px;
-  height: auto;
-  flex-shrink: 0;
-  animation: flag-wave 3s ease-in-out infinite;
-  transform-origin: left center;
-}
-
-@keyframes flag-wave {
-  0%, 100% {
-    transform: skewY(0deg) scaleX(1);
-  }
-  25% {
-    transform: skewY(1.5deg) scaleX(0.99);
-  }
-  50% {
-    transform: skewY(0deg) scaleX(1.01);
-  }
-  75% {
-    transform: skewY(-1.5deg) scaleX(0.99);
-  }
-}
-
-header p {
-  margin: 0;
+.freeze-credit-description {
+  color: #9a9a9a;
+  font-size: 14px;
   line-height: 1.5;
-  color: #d1d5db;
+  margin-bottom: 16px;
 }
 
-/* Patriotic accent stripe under the header, since the app is US-based (.global domain) */
-header::after {
-  content: "";
-  display: block;
-  height: 6px;
-  margin-top: 20px;
-  border-radius: 0 0 16px 16px;
-  background: linear-gradient(
-    90deg,
-    var(--navy) 0%,
-    var(--navy) 33%,
-    #ffffff 33%,
-    #ffffff 66%,
-    var(--red) 66%,
-    var(--red) 100%
-  );
+.bureau-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-section {
-  background: white;
-  padding: 24px;
-  margin-bottom: 20px;
-  border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+.bureau-card {
+  background: #242424;
+  border-radius: 12px;
+  padding: 14px;
 }
 
-h2 {
-  margin-top: 0;
-  color: var(--navy);
+.bureau-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-button {
-  background: var(--navy);
-  color: white;
+.bureau-name {
+  color: #fff;
+  font-weight: 600;
+}
+
+.bureau-toggle {
+  background: none;
   border: none;
-  padding: 12px 20px;
-  border-radius: 8px;
-  font-size: 16px;
+  color: #9a9a9a;
+  font-size: 12px;
+  text-decoration: underline;
   cursor: pointer;
 }
 
-button:hover {
-  background: var(--red);
-}
-
-button:disabled {
-  background: #999;
-  cursor: not-allowed;
-}
-
-textarea,
-input,
-select {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  font-size: 16px;
-  margin-bottom: 12px;
-}
-
-ul {
-  line-height: 1.8;
-}
-
-label {
-  display: block;
-  font-weight: 600;
-  font-size: 14px;
+.bureau-options {
   margin-top: 10px;
-}
-
-/* Dashboard stat cards */
-.stats-row {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.stat-card {
-  flex: 1;
-  text-align: center;
-  padding: 16px;
-  background: #f4f7fb;
-  border-radius: 10px;
-}
-
-.stat-number {
-  display: block;
-  font-size: 28px;
-  font-weight: bold;
-  color: var(--navy);
-}
-
-.stat-label {
-  font-size: 13px;
-  color: #6b7280;
-}
-
-/* Risk result cards used by ScamCheck / CryptoCheck */
-.result {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 8px;
-  border-left: 5px solid #999;
-}
-
-.risk-low {
-  border-left-color: #2e7d32;
-  background: #f1f8f1;
-}
-
-.risk-medium {
-  border-left-color: #f9a825;
-  background: #fffaf0;
-}
-
-.risk-high {
-  border-left-color: var(--red);
-  background: #fdf1f4;
-}
-
-.warning {
-  color: var(--red);
-  font-weight: 600;
-}
-
-.error {
-  color: var(--red);
-}
-
-.subtext {
-  color: #6b7280;
+.bureau-link {
+  color: #a78bfa;
   font-size: 14px;
+  text-decoration: none;
 }
 
-.button-row {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+.bureau-link:hover {
+  color: #c4b5fd;
 }
 
-/* Pricing plans */
-.plans-row {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.plan-card {
-  flex: 1;
-  min-width: 220px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 20px;
-}
-
-.plan-card.highlight {
-  border: 2px solid var(--navy);
-  background: #f8fafc;
-}
-
-.plan-card h3 {
-  margin-top: 0;
-  color: var(--navy);
-}
-
-.plan-card .price {
-  font-size: 28px;
-  font-weight: bold;
-  margin: 4px 0;
-}
-
-.plan-card .price span {
-  font-size: 14px;
-  font-weight: normal;
-  color: #6b7280;
-}
-
-.plan-card ul {
-  padding-left: 20px;
-  font-size: 14px;
-}
-
-/* Decoy card - contextual alert + card display */
-.decoy-prompt {
+.freeze-credit-note {
   margin-top: 16px;
-  padding: 16px;
-  border-radius: 8px;
-  border: 2px solid var(--red);
-  background: #fdf1f4;
-}
-
-.decoy-card {
-  margin-top: 16px;
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
-}
-
-/* Senior mode panel */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-
-.toggle-row input {
-  width: auto;
-  margin: 0;
-}
-
-.call-trusted-button {
-  background: var(--red);
-  font-size: 18px;
-  padding: 14px 20px;
-  margin-top: 10px;
-}
-
-.senior-warning {
-  margin-top: 16px;
-  padding: 20px;
-  border-radius: 10px;
-  border: 3px solid var(--red);
-  background: #fdf1f4;
-  font-size: 18px;
-  line-height: 1.6;
-}
-
-/* Senior mode: larger text and touch targets everywhere */
-body.senior-mode {
-  font-size: 19px;
-}
-
-body.senior-mode h1 {
-  font-size: 38px;
-}
-
-body.senior-mode h2 {
-  font-size: 26px;
-}
-
-body.senior-mode button {
-  font-size: 19px;
-  padding: 16px 22px;
-}
-
-body.senior-mode input,
-body.senior-mode textarea,
-body.senior-mode select {
-  font-size: 19px;
-  padding: 16px;
-}
-
-body.senior-mode section {
-  padding: 28px;
-}
-
-.insurance-red-flags {
-  font-size: 15px;
-  line-height: 1.7;
-  color: #444;
-}
-
-.admin-reset {
-  border: 2px dashed #999;
-  background: #f0f0f0;
-}
-
-.admin-reset button {
-  background: #666;
-}
-
-.admin-reset button:hover {
-  background: #444;
-}
-
-.voice-button {
-  display: block;
-  width: 100%;
-  background: #2e7d32;
-  margin-bottom: 10px;
-}
-
-.voice-button:hover {
-  background: #1b5e20;
-}
-
-body.senior-mode .voice-button {
-  font-size: 20px;
-  padding: 18px;
-}
-
-@media (max-width: 600px) {
-  main {
-    padding: 14px;
-  }
-
-  header {
-    padding: 20px;
-  }
-
-  header h1 {
-    font-size: 26px;
-  }
-
-  section {
-    padding: 18px;
-  }
+  font-size: 12px;
+  color: #7a7a7a;
+  line-height: 1.5;
 }
