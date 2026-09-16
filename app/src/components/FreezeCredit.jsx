@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Lock, Phone, ExternalLink, ShieldAlert } from "lucide-react";
 
 const BUREAUS = [
   {
@@ -23,45 +22,33 @@ export default function FreezeCredit() {
   const [expanded, setExpanded] = useState(null);
 
   return (
-    <div className="rounded-2xl p-5 space-y-4 bg-neutral-900 border border-neutral-800">
-      <div className="flex items-center gap-2">
-        <ShieldAlert className="text-red-400" size={20} />
-        <h2 className="text-lg font-semibold text-white">Freeze My Credit</h2>
-      </div>
-      <p className="text-sm text-neutral-400">
+    <div className="freeze-credit">
+      <h3 className="freeze-credit-title">Freeze My Credit</h3>
+      <p className="freeze-credit-description">
         A credit freeze stops anyone — including scammers — from opening new
-        accounts in your name. You need to freeze with{" "}
-        <span className="text-white font-medium">all three bureaus</span> for
+        accounts in your name. You need to freeze with all three bureaus for
         full protection. It's free and doesn't hurt your credit score.
       </p>
 
-      <div className="space-y-3">
+      <div className="bureau-list">
         {BUREAUS.map((b) => (
-          <div key={b.name} className="rounded-xl bg-neutral-800 p-4">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-white">{b.name}</span>
+          <div key={b.name} className="bureau-card">
+            <div className="bureau-card-header">
+              <span className="bureau-name">{b.name}</span>
               <button
                 onClick={() => setExpanded(expanded === b.name ? null : b.name)}
-                className="text-xs text-neutral-400 underline"
+                className="bureau-toggle"
               >
                 {expanded === b.name ? "Hide options" : "How to freeze"}
               </button>
             </div>
             {expanded === b.name && (
-              <div className="mt-3 space-y-2">
-                <a
-                  href={b.freezeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300"
-                >
-                  <ExternalLink size={14} /> Freeze online at {b.name}.com
+              <div className="bureau-options">
+                <a href={b.freezeUrl} target="_blank" rel="noopener noreferrer" className="bureau-link">
+                  Freeze online at {b.name}.com
                 </a>
-                <a
-                  href={`tel:${b.phone.replace(/\D/g, "")}`}
-                  className="flex items-center gap-2 text-sm text-purple-400 hover:text-purple-300"
-                >
-                  <Phone size={14} /> Call {b.phone}
+                <a href={`tel:${b.phone.replace(/\D/g, "")}`} className="bureau-link">
+                  Call {b.phone}
                 </a>
               </div>
             )}
@@ -69,13 +56,10 @@ export default function FreezeCredit() {
         ))}
       </div>
 
-      <div className="rounded-xl bg-neutral-800/60 p-4 flex gap-2">
-        <Lock size={16} className="text-neutral-400 mt-0.5 flex-shrink-0" />
-        <p className="text-xs text-neutral-400 leading-relaxed">
-          Keep the PIN or password each bureau gives you — you'll need it to
-          lift the freeze later when you actually apply for credit.
-        </p>
-      </div>
+      <p className="freeze-credit-note">
+        Keep the PIN or password each bureau gives you — you'll need it to
+        lift the freeze later when you actually apply for credit.
+      </p>
     </div>
   );
 }
