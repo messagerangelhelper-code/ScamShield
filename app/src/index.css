@@ -196,3 +196,21 @@ button:hover {
   color: #7a7a7a;
   line-height: 1.5;
 }
+.pricing-plans {
+  background: #ffffff;
+  border: 1px solid #d0d0d0;
+}
+
+.pricing-plans h2 {
+  color: #0f2557;
+  border-left-color: #b31942;
+}
+
+.pricing-plans p,
+.pricing-plans li {
+  color: #1a1a1a;
+}
+
+.pricing-plans h3 {
+  color: #b31942;
+}
