@@ -71,7 +71,7 @@ section {
 }
 
 input, textarea {
-  background: #0a1628;
+  background: #0d1b3d;
   color: #f0f0f0;
   border: 1px solid #1e3358;
   border-radius: 8px;
@@ -148,7 +148,7 @@ button:hover {
 }
 
 .bureau-card {
-  background: #0a1628;
+  background: #0d1b3d;
   border-radius: 12px;
   padding: 14px;
 }
