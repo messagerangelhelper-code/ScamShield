@@ -66,7 +66,7 @@ function PricingPlans() {
   }
 
   return (
-    <section className="pricing-plans">
+  <section className="pricing-plans">
       <h2>Plans</h2>
       <p className="subtext">
         You've used {usage} of 3 free checks.
