@@ -53,11 +53,10 @@ SAFE_BROWSING_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
 VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "REPLACE_WITH_REAL_KEY")
 VIRUSTOTAL_URL = "https://www.virustotal.com/api/v3/urls"
 
-# --- PhishTank config ---
-# Free, community-reported phishing database. App key is optional but
-# recommended for higher rate limits: https://www.phishtank.com/api_register.php
-PHISHTANK_API_KEY = os.environ.get("PHISHTANK_API_KEY", "")
-PHISHTANK_URL = "https://checkurl.phishtank.com/checkurl/"
+# --- URLhaus config ---
+# Free, no API key required. Community-driven malicious URL database
+# run by abuse.ch. Docs: https://urlhaus-api.abuse.ch/
+URLHAUS_URL = "https://urlhaus-api.abuse.ch/v1/url/"
 
 # --- Decoy card provider config ---
 # The real key lives in a local .env file (never committed) or your
@@ -377,22 +376,22 @@ async def check_urls(payload: URLCheckRequest):
         except (httpx.HTTPError, KeyError):
             details["virustotal"] = {"error": "unreachable or rate-limited"}
 
-    # --- PhishTank ---
-    sources_checked.append("PhishTank")  # works without a key, just lower rate limit
+    
+# --- URLhaus ---
+    sources_checked.append("URLhaus")  # free, no key required
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            form_data = {"url": url, "format": "json"}
-            if PHISHTANK_API_KEY:
-                form_data["app_key"] = PHISHTANK_API_KEY
-            resp = await client.post(PHISHTANK_URL, data=form_data)
+            resp = await client.post(URLHAUS_URL, data={"url": url})
             resp.raise_for_status()
-            result = resp.json().get("results", {})
-            if result.get("in_database") and result.get("valid"):
+            result = resp.json()
+            if result.get("query_status") == "ok":
                 flagged_urls.add(url)
-            details["phishtank"] = {"in_database": result.get("in_database", False)}
+            details["urlhaus"] = {
+                "in_database": result.get("query_status") == "ok",
+                "threat": result.get("threat"),
+            }
     except httpx.HTTPError:
-        details["phishtank"] = {"error": "unreachable"}
-
+        details["urlhaus"] = {"error": "unreachable"}
     return {
         "configured": len(sources_checked) > 0,
         "sources_checked": sources_checked,
