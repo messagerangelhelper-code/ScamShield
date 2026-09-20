@@ -310,11 +310,52 @@ async def check_urls(payload: URLCheckRequest):
     if not payload.urls:
         return {"configured": False, "flagged_urls": [], "sources_checked": []}
 
-    url = payload.urls[0]  # primary URL for VirusTotal/PhishTank single-URL checks
+    domain_age = await check_domain_age(url)
+    sources_checked.append("Domain Age (RDAP)")
+    if domain_age.get("is_new_domain"):
+        flagged_urls.add(url)
+    details["domain_age"] = domain_age
     sources_checked = []
     flagged_urls = set()
     details = {}
+async def check_domain_age(url: str) -> dict:
+    """
+    Checks how recently a domain was registered using RDAP (the public,
+    keyless WHOIS replacement). Domains registered in the last 30 days
+    are a major red flag — scam sites are almost always brand new,
+    while legitimate businesses' domains are typically months or years old.
+    """
+    from urllib.parse import urlparse
+    from datetime import datetime, timezone
 
+    try:
+        domain = urlparse(url).netloc.replace("www.", "")
+        if not domain:
+            domain = url.replace("www.", "").split("/")[0]
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"https://rdap.org/domain/{domain}")
+            if resp.status_code != 200:
+                return {"checked": False, "reason": "No registration data found"}
+            data = resp.json()
+
+        events = data.get("events", [])
+        registered = next((e["eventDate"] for e in events if e.get("eventAction") == "registration"), None)
+        if not registered:
+            return {"checked": False, "reason": "Registration date unavailable"}
+
+        reg_date = datetime.fromisoformat(registered.replace("Z", "+00:00"))
+        age_days = (datetime.now(timezone.utc) - reg_date).days
+
+        return {
+            "checked": True,
+            "domain": domain,
+            "registered_on": registered,
+            "age_days": age_days,
+            "is_new_domain": age_days < 30,
+        }
+    except Exception:
+        return {"checked": False, "reason": "Lookup failed"}
     # --- Google Safe Browsing ---
     if GOOGLE_SAFE_BROWSING_API_KEY != "REPLACE_WITH_REAL_KEY":
         sources_checked.append("Google Safe Browsing")
