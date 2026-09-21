@@ -318,7 +318,8 @@ async def check_urls(payload: URLCheckRequest):
     sources_checked = []
     flagged_urls = set()
     details = {}
-async def check_domain_age(url: str) -> dict:
+
+  async def check_domain_age(url: str) -> dict:
     """
     Checks how recently a domain was registered using RDAP (the public,
     keyless WHOIS replacement). Domains registered in the last 30 days
@@ -356,6 +357,37 @@ async def check_domain_age(url: str) -> dict:
         }
     except Exception:
         return {"checked": False, "reason": "Lookup failed"}
+
+
+@app.post("/api/url-check")
+async def check_urls(payload: URLCheckRequest):
+    """
+    Checks URLs against multiple independent free/low-cost sources, since
+    no single database catches everything — especially brand-new scam
+    sites that haven't been reported anywhere yet:
+      - Google Safe Browsing (malware, phishing, unwanted software)
+      - VirusTotal (aggregates 70+ security engines' verdicts)
+      - URLhaus (community-reported malicious URLs)
+      - Domain age via RDAP (flags brand-new domains — a strong scam signal)
+
+    Returns which sources are actually configured, and a combined verdict.
+    A URL is flagged if ANY configured source flags it.
+    """
+    if not payload.urls:
+        return {"configured": False, "flagged_urls": [], "sources_checked": []}
+
+    url = payload.urls[0]
+    sources_checked = []
+    flagged_urls = set()
+    details = {}
+
+    # --- Domain age (RDAP) ---
+    domain_age = await check_domain_age(url)
+    sources_checked.append("Domain Age (RDAP)")
+    if domain_age.get("is_new_domain"):
+        flagged_urls.add(url)
+    details["domain_age"] = domain_age
+
     # --- Google Safe Browsing ---
     if GOOGLE_SAFE_BROWSING_API_KEY != "REPLACE_WITH_REAL_KEY":
         sources_checked.append("Google Safe Browsing")
@@ -389,7 +421,6 @@ async def check_domain_age(url: str) -> dict:
         sources_checked.append("VirusTotal")
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                # Submit the URL for analysis
                 submit_resp = await client.post(
                     VIRUSTOTAL_URL,
                     headers={"x-apikey": VIRUSTOTAL_API_KEY},
@@ -398,7 +429,6 @@ async def check_domain_age(url: str) -> dict:
                 submit_resp.raise_for_status()
                 analysis_id = submit_resp.json()["data"]["id"]
 
-                # Fetch the analysis result
                 result_resp = await client.get(
                     f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
                     headers={"x-apikey": VIRUSTOTAL_API_KEY},
@@ -417,8 +447,7 @@ async def check_domain_age(url: str) -> dict:
         except (httpx.HTTPError, KeyError):
             details["virustotal"] = {"error": "unreachable or rate-limited"}
 
-    
-# --- URLhaus ---
+    # --- URLhaus ---
     sources_checked.append("URLhaus")  # free, no key required
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -433,9 +462,10 @@ async def check_domain_age(url: str) -> dict:
             }
     except httpx.HTTPError:
         details["urlhaus"] = {"error": "unreachable"}
+
     return {
         "configured": len(sources_checked) > 0,
         "sources_checked": sources_checked,
         "flagged_urls": list(flagged_urls),
         "details": details,
-    }
+    }                  
