@@ -4,7 +4,9 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
+import json
+import firebase_admin
+from firebase_admin import credentials, firestore
 load_dotenv()
 
 app = FastAPI(title="ScamShield API")
@@ -38,7 +40,11 @@ class DecoyCardRequest(BaseModel):
 
 class URLCheckRequest(BaseModel):
     urls: list[str]
-
+class TrustedContactRequest(BaseModel):
+    device_id: str
+    contact_name: str
+    contact_phone: str
+    codeword: str
 
 PUBLICAML_URL = "https://intelapi.publicaml.org/v1/enrich"
 
@@ -226,7 +232,26 @@ async def check_crypto_address(payload: CryptoCheckRequest):
         "category": entity.get("category"),
         "label": entity.get("label"),
     }
+@app.post("/api/trusted-contact")
+def save_trusted_contact(payload: TrustedContactRequest):
+    if not db:
+        return {"error": "Firebase is not configured on the server yet."}
+    db.collection("trusted_contacts").document(payload.device_id).set({
+        "contact_name": payload.contact_name,
+        "contact_phone": payload.contact_phone,
+        "codeword": payload.codeword,
+    })
+    return {"saved": True}
 
+
+@app.get("/api/trusted-contact/{device_id}")
+def get_trusted_contact(device_id: str):
+    if not db:
+        return {"error": "Firebase is not configured on the server yet."}
+    doc = db.collection("trusted_contacts").document(device_id).get()
+    if not doc.exists:
+        return {"found": False}
+    return {"found": True, **doc.to_dict()}
 
 @app.post("/api/decoy-card")
 async def request_decoy_card(payload: DecoyCardRequest):
