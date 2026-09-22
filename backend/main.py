@@ -1,0 +1,496 @@
+import os
+from dotenv import load_dotenv
+import httpx
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import json
+import firebase_admin
+from firebase_admin import credentials, firestore
+load_dotenv()
+
+app = FastAPI(title="ScamShield API")
+
+# Allow the frontend dev server (and your deployed domain) to call this API.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "https://scamshield.global",
+        "https://www.scamshield.global",
+        "https://scamshield-app-x89o.onrender.com",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class CheckRequest(BaseModel):
+    text: str
+
+
+class CryptoCheckRequest(BaseModel):
+    address: str
+    chain: str = "ethereum"  # ethereum, bitcoin, bnb, tron
+
+
+class DecoyCardRequest(BaseModel):
+    reason: str = "prepaid_card_scam"  # what triggered the request, for your own logs
+
+
+class URLCheckRequest(BaseModel):
+    urls: list[str]
+class TrustedContactRequest(BaseModel):
+    device_id: str
+    contact_name: str
+    contact_phone: str
+    codeword: str
+
+PUBLICAML_URL = "https://intelapi.publicaml.org/v1/enrich"
+
+# --- Google Safe Browsing config ---
+# Free tier: 10,000 requests/day. Get a key at:
+# https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com
+GOOGLE_SAFE_BROWSING_API_KEY = os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY", "REPLACE_WITH_REAL_KEY")
+SAFE_BROWSING_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+
+# --- VirusTotal config ---
+# Free tier: 4 requests/minute. Get a key at: https://www.virustotal.com/gui/join-us
+VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "REPLACE_WITH_REAL_KEY")
+VIRUSTOTAL_URL = "https://www.virustotal.com/api/v3/urls"
+
+# --- URLhaus config ---
+# Free, no API key required. Community-driven malicious URL database
+# run by abuse.ch. Docs: https://urlhaus-api.abuse.ch/
+URLHAUS_URL = "https://urlhaus-api.abuse.ch/v1/url/"
+
+# --- Decoy card provider config ---
+# The real key lives in a local .env file (never committed) or your
+# hosting provider's environment variable settings — never in this file.
+CARD_PROVIDER_API_KEY = os.environ.get("LITHIC_API_KEY", "REPLACE_WITH_REAL_KEY")
+CARD_PROVIDER_BASE_URL = "https://sandbox.lithic.com/v1"  # sandbox until approved
+
+
+# --- Heuristic scam patterns ---
+# No paid API needed for this first layer — pure keyword/pattern scoring.
+RED_FLAGS = {
+    "urgency": {
+        "phrases": ["act now", "urgent", "limited time", "today only", "immediately"],
+        "weight": 15,
+        "message": "Uses urgency to pressure quick action",
+    },
+    "off_platform": {
+        "phrases": ["whatsapp", "text me directly", "call me instead", "email me at"],
+        "weight": 15,
+        "message": "Tries to move the conversation off the platform",
+    },
+    "payment_method": {
+        "phrases": ["wire transfer", "western union", "cash app", "zelle",
+                    "crypto", "bitcoin", "usdt"],
+        "weight": 25,
+        "message": "Requests an untraceable or irreversible payment method",
+    },
+    "prepaid_card_request": {
+        "phrases": ["gift card", "prepaid visa", "prepaid card", "vanilla visa",
+                    "steam card", "put money on a card", "load a card",
+                    "load money onto a card", "google play card", "itunes card"],
+        "weight": 30,
+        "message": "Asks you to load money onto a gift card or prepaid card — a major red flag",
+    },
+    "too_good": {
+        "phrases": ["guaranteed profit", "no risk", "double your money",
+                    "free money", "you've won"],
+        "weight": 20,
+        "message": "Promises unrealistic returns or guarantees",
+    },
+    "helper_offer": {
+        "phrases": ["i can help you cash out", "let me handle your account",
+                    "send me your login", "share your password"],
+        "weight": 30,
+        "message": "Offers to 'help' access your account or funds directly",
+    },
+    "new_account_request": {
+        "phrases": ["open a new bank account", "open a new account for this"],
+        "weight": 30,
+        "message": "Asks you to open a new account — a common fund-laundering tactic",
+    },
+    "insurance_fraud": {
+        "phrases": ["pay your deductible now", "wire the deductible",
+                    "policy will be cancelled unless you pay", "reactivate your medicare",
+                    "confirm your medicare number", "guaranteed approval no medical exam",
+                    "processing fee before we release your claim", "claims adjuster needs payment",
+                    "send the deductible by gift card", "verify your social security to keep coverage"],
+        "weight": 30,
+        "message": "Matches a common insurance-fraud pattern — real insurers never require upfront payment to process a claim or ask you to pay a deductible directly to an agent",
+    },
+    "charity_scam": {
+        "phrases": ["donate now to help victims", "urgent disaster relief donation",
+                    "wire your donation", "send your donation by gift card",
+                    "100% of your donation", "tax deductible donation today only",
+                    "help the families affected", "disaster relief fund needs your help now"],
+        "weight": 25,
+        "message": "Matches a common charity-scam pattern — legitimate charities never pressure urgent donations or ask for gift cards/wire transfers",
+    },
+    "irs_impersonation": {
+        "phrases": ["irs will arrest you", "pay your back taxes immediately",
+                    "this is the irs calling", "your tax id has been suspended",
+                    "irs warrant issued", "pay the irs with gift cards",
+                    "final notice before legal action", "irs online account suspended",
+                    "verify your tax refund by providing"],
+        "weight": 30,
+        "message": "Matches a real IRS-impersonation pattern — the IRS contacts by mail first, never demands immediate payment by phone, and never accepts gift cards",
+    },
+}
+
+
+def analyze_text(text: str) -> dict:
+    lowered = text.lower()
+    score = 0
+    flags = []
+    trigger_decoy_card = False
+
+    for category, rule in RED_FLAGS.items():
+        for phrase in rule["phrases"]:
+            if phrase in lowered:
+                score += rule["weight"]
+                flags.append(rule["message"])
+                if category == "prepaid_card_request":
+                    trigger_decoy_card = True
+                break  # only count each category once
+
+    score = min(score, 100)
+
+    if score >= 50:
+        level = "high"
+    elif score >= 20:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "risk_score": score,
+        "risk_level": level,
+        "flags": flags,
+        "trigger_decoy_card": trigger_decoy_card,
+    }
+
+
+@app.get("/")
+def root():
+    return {"status": "ScamShield API is running"}
+
+
+@app.post("/api/check")
+def check_text(payload: CheckRequest):
+    return analyze_text(payload.text)
+
+
+@app.post("/api/crypto-check")
+async def check_crypto_address(payload: CryptoCheckRequest):
+    """
+    Checks a crypto wallet address against PublicAML's free, keyless
+    AML/scam-screening API before a user sends funds to it.
+    Docs: https://publicaml.org/
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                PUBLICAML_URL,
+                json={"addresses": [{"wallet_address": payload.address, "chain": payload.chain}]},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError:
+        return {
+            "error": "Could not reach the address-screening service. Try again shortly.",
+            "address": payload.address,
+        }
+
+    entities = data.get("entities", [])
+    if not entities:
+        return {
+            "address": payload.address,
+            "risk_level": "unknown",
+            "message": "No data found for this address — proceed with caution.",
+        }
+
+    entity = entities[0]
+    score = entity.get("aml_score", 0)
+
+    if score >= 70:
+        level = "high"
+    elif score >= 30:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "address": payload.address,
+        "chain": entity.get("chain", payload.chain),
+        "aml_score": score,
+        "risk_level": level,
+        "category": entity.get("category"),
+        "label": entity.get("label"),
+    }
+@app.post("/api/trusted-contact")
+def save_trusted_contact(payload: TrustedContactRequest):
+    if not db:
+        return {"error": "Firebase is not configured on the server yet."}
+    db.collection("trusted_contacts").document(payload.device_id).set({
+        "contact_name": payload.contact_name,
+        "contact_phone": payload.contact_phone,
+        "codeword": payload.codeword,
+    })
+    return {"saved": True}
+
+
+@app.get("/api/trusted-contact/{device_id}")
+def get_trusted_contact(device_id: str):
+    if not db:
+        return {"error": "Firebase is not configured on the server yet."}
+    doc = db.collection("trusted_contacts").document(device_id).get()
+    if not doc.exists:
+        return {"found": False}
+    return {"found": True, **doc.to_dict()}
+
+@app.post("/api/decoy-card")
+async def request_decoy_card(payload: DecoyCardRequest):
+    """
+    Requests a single-use, near-zero-balance virtual card from the card
+    provider to hand to a scammer instead of real funds. The provider
+    (Lithic/Stripe Issuing/etc.) is the actual regulated issuer — ScamShield
+    never holds card-issuing licensing itself, only calls their API.
+
+    NOT LIVE YET: requires a real provider account, approval of this exact
+    use case by their risk/compliance team, and a real API key in
+    CARD_PROVIDER_API_KEY before this will return a usable card.
+    """
+    if CARD_PROVIDER_API_KEY == "REPLACE_WITH_REAL_KEY":
+        return {
+            "error": "Decoy card provider not yet configured. "
+                     "This feature requires a live card-issuing partnership."
+        }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{CARD_PROVIDER_BASE_URL}/cards",
+                headers={"Authorization": f"Bearer {CARD_PROVIDER_API_KEY}"},
+                json={
+                    "type": "SINGLE_USE",
+                    "spend_limit": 100,  # cents — effectively $1, adjust per provider minimums
+                    "memo": f"ScamShield decoy - {payload.reason}",
+                },
+            )
+            resp.raise_for_status()
+            card = resp.json()
+    except httpx.HTTPError:
+        return {"error": "Could not reach the card provider. Try again shortly."}
+
+    # Only return what the user needs to hand to the scammer —
+    # never log or store the full card number/CVV server-side.
+    return {
+        "card_number": card.get("pan"),
+        "expiry": card.get("exp_month", "") + "/" + card.get("exp_year", ""),
+        "cvv": card.get("cvv"),
+        "note": "This card has a near-zero balance and is being monitored. "
+                "Any attempt to use it will be logged as evidence.",
+    }
+
+
+@app.post("/api/decoy-card/webhook")
+async def decoy_card_webhook(payload: dict):
+    """
+    Receives authorization-attempt events from the card provider when
+    someone tries to use a decoy card. Even a DECLINED attempt includes
+    merchant name, location, and timestamp — direct evidence for an IC3
+    report. Wire this URL into your provider's webhook settings once live.
+    """
+    # TODO: persist this to a database keyed by card ID, and/or
+    # auto-populate the IC3Report evidence fields with merchant/location data.
+    merchant = payload.get("merchant", {})
+    return {
+        "received": True,
+        "merchant_name": merchant.get("descriptor"),
+        "merchant_city": merchant.get("city"),
+        "merchant_country": merchant.get("country"),
+        "attempted_amount": payload.get("amount"),
+        "status": payload.get("result"),  # e.g. "DECLINED"
+    }
+
+
+@app.post("/api/url-check")
+async def check_urls(payload: URLCheckRequest):
+    """
+    Checks URLs against three independent free/low-cost sources, since no
+    single database catches everything — especially brand-new scam sites
+    that haven't been reported anywhere yet:
+      - Google Safe Browsing (malware, phishing, unwanted software)
+      - VirusTotal (aggregates 70+ security engines' verdicts)
+      - PhishTank (community-reported phishing, often faster on new scams)
+
+    Returns which sources are actually configured, and a combined verdict.
+    A URL is flagged if ANY configured source flags it.
+    """
+    if not payload.urls:
+        return {"configured": False, "flagged_urls": [], "sources_checked": []}
+
+    domain_age = await check_domain_age(url)
+    sources_checked.append("Domain Age (RDAP)")
+    if domain_age.get("is_new_domain"):
+        flagged_urls.add(url)
+    details["domain_age"] = domain_age
+    sources_checked = []
+    flagged_urls = set()
+    details = {}
+
+  async def check_domain_age(url: str) -> dict:
+    """
+    Checks how recently a domain was registered using RDAP (the public,
+    keyless WHOIS replacement). Domains registered in the last 30 days
+    are a major red flag — scam sites are almost always brand new,
+    while legitimate businesses' domains are typically months or years old.
+    """
+    from urllib.parse import urlparse
+    from datetime import datetime, timezone
+
+    try:
+        domain = urlparse(url).netloc.replace("www.", "")
+        if not domain:
+            domain = url.replace("www.", "").split("/")[0]
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"https://rdap.org/domain/{domain}")
+            if resp.status_code != 200:
+                return {"checked": False, "reason": "No registration data found"}
+            data = resp.json()
+
+        events = data.get("events", [])
+        registered = next((e["eventDate"] for e in events if e.get("eventAction") == "registration"), None)
+        if not registered:
+            return {"checked": False, "reason": "Registration date unavailable"}
+
+        reg_date = datetime.fromisoformat(registered.replace("Z", "+00:00"))
+        age_days = (datetime.now(timezone.utc) - reg_date).days
+
+        return {
+            "checked": True,
+            "domain": domain,
+            "registered_on": registered,
+            "age_days": age_days,
+            "is_new_domain": age_days < 30,
+        }
+    except Exception:
+        return {"checked": False, "reason": "Lookup failed"}
+
+
+@app.post("/api/url-check")
+async def check_urls(payload: URLCheckRequest):
+    """
+    Checks URLs against multiple independent free/low-cost sources, since
+    no single database catches everything — especially brand-new scam
+    sites that haven't been reported anywhere yet:
+      - Google Safe Browsing (malware, phishing, unwanted software)
+      - VirusTotal (aggregates 70+ security engines' verdicts)
+      - URLhaus (community-reported malicious URLs)
+      - Domain age via RDAP (flags brand-new domains — a strong scam signal)
+
+    Returns which sources are actually configured, and a combined verdict.
+    A URL is flagged if ANY configured source flags it.
+    """
+    if not payload.urls:
+        return {"configured": False, "flagged_urls": [], "sources_checked": []}
+
+    url = payload.urls[0]
+    sources_checked = []
+    flagged_urls = set()
+    details = {}
+
+    # --- Domain age (RDAP) ---
+    domain_age = await check_domain_age(url)
+    sources_checked.append("Domain Age (RDAP)")
+    if domain_age.get("is_new_domain"):
+        flagged_urls.add(url)
+    details["domain_age"] = domain_age
+
+    # --- Google Safe Browsing ---
+    if GOOGLE_SAFE_BROWSING_API_KEY != "REPLACE_WITH_REAL_KEY":
+        sources_checked.append("Google Safe Browsing")
+        body = {
+            "client": {"clientId": "scamshield", "clientVersion": "1.0.0"},
+            "threatInfo": {
+                "threatTypes": [
+                    "MALWARE", "SOCIAL_ENGINEERING",
+                    "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION",
+                ],
+                "platformTypes": ["ANY_PLATFORM"],
+                "threatEntryTypes": ["URL"],
+                "threatEntries": [{"url": u} for u in payload.urls],
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{SAFE_BROWSING_URL}?key={GOOGLE_SAFE_BROWSING_API_KEY}", json=body
+                )
+                resp.raise_for_status()
+                matches = resp.json().get("matches", [])
+                for m in matches:
+                    flagged_urls.add(m["threat"]["url"])
+                details["safe_browsing"] = {"flagged": len(matches) > 0}
+        except httpx.HTTPError:
+            details["safe_browsing"] = {"error": "unreachable"}
+
+    # --- VirusTotal ---
+    if VIRUSTOTAL_API_KEY != "REPLACE_WITH_REAL_KEY":
+        sources_checked.append("VirusTotal")
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                submit_resp = await client.post(
+                    VIRUSTOTAL_URL,
+                    headers={"x-apikey": VIRUSTOTAL_API_KEY},
+                    data={"url": url},
+                )
+                submit_resp.raise_for_status()
+                analysis_id = submit_resp.json()["data"]["id"]
+
+                result_resp = await client.get(
+                    f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
+                    headers={"x-apikey": VIRUSTOTAL_API_KEY},
+                )
+                result_resp.raise_for_status()
+                stats = result_resp.json()["data"]["attributes"]["stats"]
+                malicious = stats.get("malicious", 0)
+                suspicious = stats.get("suspicious", 0)
+
+                if malicious > 0 or suspicious > 0:
+                    flagged_urls.add(url)
+                details["virustotal"] = {
+                    "malicious_votes": malicious,
+                    "suspicious_votes": suspicious,
+                }
+        except (httpx.HTTPError, KeyError):
+            details["virustotal"] = {"error": "unreachable or rate-limited"}
+
+    # --- URLhaus ---
+    sources_checked.append("URLhaus")  # free, no key required
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(URLHAUS_URL, data={"url": url})
+            resp.raise_for_status()
+            result = resp.json()
+            if result.get("query_status") == "ok":
+                flagged_urls.add(url)
+            details["urlhaus"] = {
+                "in_database": result.get("query_status") == "ok",
+                "threat": result.get("threat"),
+            }
+    except httpx.HTTPError:
+        details["urlhaus"] = {"error": "unreachable"}
+
+    return {
+        "configured": len(sources_checked) > 0,
+        "sources_checked": sources_checked,
+        "flagged_urls": list(flagged_urls),
+        "details": details,
+    }                  
