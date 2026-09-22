@@ -318,7 +318,6 @@ async def decoy_card_webhook(payload: dict):
         "status": payload.get("result"),  # e.g. "DECLINED"
     }
 
-
 @app.post("/api/url-check")
 async def check_urls(payload: URLCheckRequest):
     """
@@ -343,7 +342,6 @@ async def check_urls(payload: URLCheckRequest):
     sources_checked = []
     flagged_urls = set()
     details = {}
-
   async def check_domain_age(url: str) -> dict:
     """
     Checks how recently a domain was registered using RDAP (the public,
@@ -382,7 +380,6 @@ async def check_urls(payload: URLCheckRequest):
         }
     except Exception:
         return {"checked": False, "reason": "Lookup failed"}
-
 
 @app.post("/api/url-check")
 async def check_urls(payload: URLCheckRequest):
