@@ -7,6 +7,7 @@ import PricingPlans from "./components/PricingPlans";
 import SeniorMode from "./components/SeniorMode";
 import InsuranceCheck from "./components/InsuranceCheck";
 import CharityCheck from "./components/CharityCheck";
+import TaxScamCheck from "./components/TaxScamCheck";
 import AdminReset from "./components/AdminReset";
 import USAFlagIcon from "./components/USAFlagIcon";
 
@@ -35,6 +36,7 @@ function App() {
       <CryptoCheck />
       <InsuranceCheck />
       <CharityCheck />
+      <TaxScamCheck />
       <IC3Report />
       <PricingPlans />
       {isAdmin && <AdminReset />}
