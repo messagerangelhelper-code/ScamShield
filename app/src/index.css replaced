@@ -103,8 +103,6 @@ button:hover {
   gap: 16px;
 }
 
-.stat-
-
 .stat-card {
   background: #0d1b3d;
   border: 1px solid #1e3358;
