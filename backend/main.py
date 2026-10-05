@@ -365,6 +365,75 @@ async def check_domain_age(url: str) -> dict:
         return {"checked": False, "reason": "Lookup failed"}
 
 
+SUSPICIOUS_TLDS = {
+    "zip", "mov", "top", "xyz", "click", "link", "icu", "cyou", "sbs", "rest",
+    "gq", "tk", "ml", "cf", "ga", "work", "support", "country", "loan", "bond",
+}
+URL_SHORTENERS = {
+    "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly",
+    "cutt.ly", "rb.gy", "shorturl.at", "tiny.cc", "rebrand.ly",
+}
+SCAM_KEYWORDS = (
+    "login", "signin", "verify", "secure", "account", "update", "wallet",
+    "confirm", "suspend", "unlock", "billing", "refund", "claim", "prize",
+)
+BRAND_NAMES = (
+    "paypal", "amazon", "apple", "microsoft", "google", "netflix", "chase",
+    "wellsfargo", "bankofamerica", "irs", "usps", "fedex", "ups", "coinbase",
+    "venmo", "cashapp", "zelle", "medicare", "socialsecurity",
+)
+
+
+def check_url_heuristics(url: str) -> dict:
+    """
+    Keyless, offline checks on the shape of the link itself. Needs no
+    account, API key, or third party. Returns reasons in plain English.
+    """
+    import re
+    from urllib.parse import urlparse
+
+    reasons = []
+    raw = url.strip()
+    parsed = urlparse(raw if "://" in raw else "http://" + raw)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return {"score": 0, "reasons": [], "suspicious": False}
+
+    labels = host.split(".")
+    tld = labels[-1]
+    base = ".".join(labels[-2:]) if len(labels) >= 2 else host
+    main_label = labels[-2] if len(labels) >= 2 else host
+
+    if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
+        reasons.append("The link uses a raw IP address instead of a website name.")
+    if parsed.scheme == "http":
+        reasons.append("The link isn't encrypted (http, not https).")
+    if "@" in parsed.netloc:
+        reasons.append("The link contains an @ sign, a trick used to hide the real destination.")
+    if "xn--" in host:
+        reasons.append("The web address uses look-alike international characters (punycode).")
+    if base in URL_SHORTENERS:
+        reasons.append("This is a shortened link, so the real destination is hidden.")
+    if tld in SUSPICIOUS_TLDS:
+        reasons.append(f"The .{tld} ending is commonly used by scam sites.")
+    if len(labels) > 4:
+        reasons.append("The address has an unusually long chain of sub-domains.")
+    if host.count("-") >= 3:
+        reasons.append("The address has many hyphens, common in fake look-alike sites.")
+    if len(raw) > 100:
+        reasons.append("The link is unusually long.")
+
+    for brand in BRAND_NAMES:
+        if brand in host and main_label != brand:
+            reasons.append(f"The address mentions '{brand}' but isn't the real {brand} website.")
+            break
+
+    if any(k in host for k in SCAM_KEYWORDS) and any(b in host for b in BRAND_NAMES):
+        reasons.append("The address mixes a well-known brand with words like 'verify' or 'login'.")
+
+    return {"score": len(reasons), "reasons": reasons, "suspicious": len(reasons) >= 2}
+
+
 @app.post("/api/url-check")
 async def check_urls(payload: URLCheckRequest):
     """
@@ -394,7 +463,14 @@ async def check_urls(payload: URLCheckRequest):
         flagged_urls.add(url)
     details["domain_age"] = domain_age
 
-    # --- Google Safe Browsing ---
+    # --- Built-in link checks (no account or key needed) ---
+    heuristics = check_url_heuristics(url)
+    sources_checked.append("Built-in link analysis")
+    if heuristics["suspicious"]:
+        flagged_urls.add(url)
+    details["heuristics"] = heuristics
+
+    # --- Google Safe Browsing (optional, only if a key is set) ---
     if GOOGLE_SAFE_BROWSING_API_KEY != "REPLACE_WITH_REAL_KEY":
         sources_checked.append("Google Safe Browsing")
         body = {
@@ -454,19 +530,25 @@ async def check_urls(payload: URLCheckRequest):
             details["virustotal"] = {"error": "unreachable or rate-limited"}
 
     # --- URLhaus ---
-    sources_checked.append("URLhaus")  # free, no key required
+    # Optional: set URLHAUS_AUTH_KEY on Render if abuse.ch requires it.
+    urlhaus_key = os.getenv("URLHAUS_AUTH_KEY")
     try:
+        headers = {"Auth-Key": urlhaus_key} if urlhaus_key else {}
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(URLHAUS_URL, data={"url": url})
-            resp.raise_for_status()
-            result = resp.json()
-            if result.get("query_status") == "ok":
-                flagged_urls.add(url)
-            details["urlhaus"] = {
-                "in_database": result.get("query_status") == "ok",
-                "threat": result.get("threat"),
-            }
-    except httpx.HTTPError:
+            resp = await client.post(URLHAUS_URL, data={"url": url}, headers=headers)
+            if resp.status_code in (401, 403):
+                details["urlhaus"] = {"error": "needs key"}
+            else:
+                resp.raise_for_status()
+                result = resp.json()
+                sources_checked.append("URLhaus")
+                if result.get("query_status") == "ok":
+                    flagged_urls.add(url)
+                details["urlhaus"] = {
+                    "in_database": result.get("query_status") == "ok",
+                    "threat": result.get("threat"),
+                }
+    except (httpx.HTTPError, ValueError):
         details["urlhaus"] = {"error": "unreachable"}
 
     return {
