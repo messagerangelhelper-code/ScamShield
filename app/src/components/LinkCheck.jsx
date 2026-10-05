@@ -51,8 +51,8 @@ function LinkCheck() {
     <section className="link-check">
       <h2>Check a Link</h2>
       <p className="subtext">
-        Paste a suspicious link before clicking it — checked against
-        Google's database of known scam, phishing, and malware sites.
+        Paste a suspicious link before clicking it — we check the link's
+        warning signs, how new the website is, and known scam lists.
       </p>
       <p className="subtext">{remainingChecks()} free checks remaining</p>
 
@@ -76,7 +76,7 @@ function LinkCheck() {
           {isFlagged ? (
             <>
               <h3>⚠️ Flagged as unsafe</h3>
-              <p>This link was flagged by at least one scam/phishing database. Do not click it.</p>
+              <p>This link shows signs of a scam or is on a known-threat list. Do not click it.</p>
             </>
           ) : (
             <>
@@ -87,6 +87,16 @@ function LinkCheck() {
                 time to get flagged, so stay cautious regardless.
               </p>
             </>
+          )}
+          {result.details?.heuristics?.reasons?.length > 0 && (
+            <ul>
+              {result.details.heuristics.reasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          )}
+          {result.details?.domain_age?.is_new_domain && (
+            <p>This website was registered only {result.details.domain_age.age_days} days ago — scam sites are usually brand new.</p>
           )}
           {result.sources_checked && result.sources_checked.length > 0 && (
             <p className="subtext">
