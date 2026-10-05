@@ -20,6 +20,8 @@ app.add_middleware(
         "https://www.scamshield.global",
         "https://scamshield-app-x89o.onrender.com",
     ],
+    # ScamGuard Global (sister app) sites hosted on Render
+    allow_origin_regex=r"https://scamguard-global[a-z0-9-]*\.onrender\.com",
     allow_methods=["*"],
     allow_headers=["*"],
 )
