@@ -6,6 +6,7 @@ import IC3Report from "./components/IC3Report";
 import PricingPlans from "./components/PricingPlans";
 import SeniorMode from "./components/SeniorMode";
 import InsuranceCheck from "./components/InsuranceCheck";
+import MedicalCheck from "./components/MedicalCheck";
 import CharityCheck from "./components/CharityCheck";
 import TaxScamCheck from "./components/TaxScamCheck";
 import AdminReset from "./components/AdminReset";
@@ -35,6 +36,7 @@ function App() {
       <LinkCheck />
       <CryptoCheck />
       <InsuranceCheck />
+      <MedicalCheck />
       <CharityCheck />
       <TaxScamCheck />
       <IC3Report />
