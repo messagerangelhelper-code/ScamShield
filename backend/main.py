@@ -270,6 +270,67 @@ async def check_crypto_address(payload: CryptoCheckRequest):
     }
 
 
+@app.get("/api/health/sources")
+async def health_sources():
+    """
+    Open this in a browser to confirm every outside data source ScamShield
+    (and ScamGuard Global) depends on is answering. Uses harmless test
+    inputs only. Each source reports OK, NEEDS KEY or FAILED.
+    """
+    import asyncio
+
+    async def check_rdap():
+        result = await check_domain_age("https://example.com")
+        if result.get("checked") and result.get("age_days", 0) > 1000:
+            return {"name": "Website age (RDAP)", "status": "OK",
+                    "detail": f"example.com is {result['age_days']} days old"}
+        return {"name": "Website age (RDAP)", "status": "FAILED",
+                "detail": result.get("reason", "Unexpected response")}
+
+    async def check_urlhaus():
+        key = os.getenv("URLHAUS_AUTH_KEY")
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(URLHAUS_URL, data={"url": "https://example.com/"},
+                                         headers={"Auth-Key": key} if key else {})
+            if resp.status_code in (401, 403):
+                return {"name": "URLhaus scam list", "status": "NEEDS KEY",
+                        "detail": "URLhaus refused the request. Add a free URLHAUS_AUTH_KEY on Render."}
+            resp.raise_for_status()
+            qs = resp.json().get("query_status")
+            if qs in ("ok", "no_results"):
+                return {"name": "URLhaus scam list", "status": "OK", "detail": f"answered ({qs})"}
+            return {"name": "URLhaus scam list", "status": "FAILED", "detail": f"unexpected answer: {qs}"}
+        except Exception as e:
+            return {"name": "URLhaus scam list", "status": "FAILED", "detail": type(e).__name__}
+
+    async def check_publicaml():
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(PUBLICAML_URL, json={"addresses": [{
+                    "wallet_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+                    "chain": "ethereum"}]})
+            if resp.status_code in (401, 403):
+                return {"name": "Crypto wallet check (PublicAML)", "status": "NEEDS KEY",
+                        "detail": f"refused with HTTP {resp.status_code}"}
+            resp.raise_for_status()
+            resp.json()
+            return {"name": "Crypto wallet check (PublicAML)", "status": "OK", "detail": "answered"}
+        except Exception as e:
+            return {"name": "Crypto wallet check (PublicAML)", "status": "FAILED", "detail": type(e).__name__}
+
+    def check_builtin():
+        r = check_url_heuristics("http://paypal-verify-login.xyz")
+        ok = r.get("suspicious") is True
+        return {"name": "Built-in link analysis", "status": "OK" if ok else "FAILED",
+                "detail": f"{r.get('score', 0)} warning signs on a known-bad test link"}
+
+    results = list(await asyncio.gather(check_rdap(), check_urlhaus(), check_publicaml()))
+    results.insert(0, check_builtin())
+    overall = "ALL OK" if all(r["status"] == "OK" for r in results) else "NEEDS ATTENTION"
+    return {"overall": overall, "checks": results}
+
+
 @app.post("/api/trusted-contact")
 def save_trusted_contact(payload: TrustedContactRequest):
     if not db:
