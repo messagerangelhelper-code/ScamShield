@@ -430,11 +430,23 @@ async def check_domain_age(url: str) -> dict:
     from datetime import datetime, timezone
 
     try:
-        domain = urlparse(url).netloc.replace("www.", "")
+        raw = url if "://" in url else "http://" + url
+        host = (urlparse(raw).hostname or "").lower()
+        labels = [p for p in host.split(".") if p]
+        if labels and all(p.isdigit() for p in labels):
+            return {"checked": False, "reason": "Link uses an IP address, not a website name"}
+        # RDAP only knows registered domains, not sub-domains like
+        # "login.example.com", so reduce to the registered part.
+        if len(labels) >= 3 and labels[-2] in ("co", "com", "org", "net", "gov", "ac", "edu"):
+            domain = ".".join(labels[-3:])
+        else:
+            domain = ".".join(labels[-2:])
         if not domain:
-            domain = url.replace("www.", "").split("/")[0]
+            return {"checked": False, "reason": "No website name in that link"}
 
-        async with httpx.AsyncClient(timeout=10) as client:
+        # rdap.org answers with a redirect to the registry that holds the
+        # domain (e.g. Verisign for .com), so redirects must be followed.
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             resp = await client.get(f"https://rdap.org/domain/{domain}")
             if resp.status_code != 200:
                 return {"checked": False, "reason": "No registration data found"}
