@@ -325,7 +325,18 @@ async def health_sources():
         return {"name": "Built-in link analysis", "status": "OK" if ok else "FAILED",
                 "detail": f"{r.get('score', 0)} warning signs on a known-bad test link"}
 
-    results = list(await asyncio.gather(check_rdap(), check_urlhaus(), check_publicaml()))
+    async def check_ipinfo():
+        if not os.getenv("IPINFO_TOKEN"):
+            return {"name": "Hosting location (IPinfo)", "status": "NEEDS KEY",
+                    "detail": "Add a free IPINFO_TOKEN on Render."}
+        r = await lookup_hosting("https://8.8.8.8")
+        if r.get("checked") and r.get("country_code"):
+            return {"name": "Hosting location (IPinfo)", "status": "OK",
+                    "detail": f"8.8.8.8 is in {r.get('country')} on {r.get('network')}"}
+        return {"name": "Hosting location (IPinfo)", "status": "FAILED",
+                "detail": r.get("reason", "Unexpected response")}
+
+    results = list(await asyncio.gather(check_rdap(), check_urlhaus(), check_publicaml(), check_ipinfo()))
     results.insert(0, check_builtin())
     overall = "ALL OK" if all(r["status"] == "OK" for r in results) else "NEEDS ATTENTION"
     return {"overall": overall, "checks": results}
@@ -417,6 +428,54 @@ async def decoy_card_webhook(payload: dict):
         "attempted_amount": payload.get("amount"),
         "status": payload.get("result"),  # e.g. "DECLINED"
     }
+
+
+IPINFO_LITE_URL = "https://api.ipinfo.io/lite/{ip}"
+
+
+async def lookup_hosting(url: str) -> dict:
+    """
+    Finds where a website's server actually is, using IPinfo Lite (free,
+    commercial use allowed with attribution: "IP address data is powered
+    by IPinfo"). Needs IPINFO_TOKEN set on Render; skipped otherwise.
+    """
+    import asyncio
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    token = os.getenv("IPINFO_TOKEN")
+    if not token:
+        return {"checked": False, "reason": "not configured"}
+    try:
+        raw = url if "://" in url else "http://" + url
+        host = (urlparse(raw).hostname or "").lower()
+        if not host:
+            return {"checked": False, "reason": "No website name in that link"}
+        try:
+            ip = str(ipaddress.ip_address(host))
+        except ValueError:
+            infos = await asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM)
+            v4 = [i[4][0] for i in infos if i[0] == socket.AF_INET]
+            ip = (v4 or [infos[0][4][0]])[0]
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(IPINFO_LITE_URL.format(ip=ip), params={"token": token})
+        if resp.status_code in (401, 403):
+            return {"checked": False, "reason": "IPinfo token was refused"}
+        resp.raise_for_status()
+        d = resp.json()
+        return {
+            "checked": True,
+            "ip": ip,
+            "country": d.get("country"),
+            "country_code": d.get("country_code"),
+            "network": d.get("as_name"),
+            "network_domain": d.get("as_domain"),
+        }
+    except socket.gaierror:
+        return {"checked": False, "reason": "That website name doesn't exist"}
+    except Exception:
+        return {"checked": False, "reason": "Lookup failed"}
 
 
 async def check_domain_age(url: str) -> dict:
@@ -575,6 +634,18 @@ async def check_urls(payload: URLCheckRequest):
     if heuristics["suspicious"]:
         flagged_urls.add(url)
     details["heuristics"] = heuristics
+
+    # --- Hosting location (IPinfo Lite, optional) ---
+    hosting = await lookup_hosting(url)
+    if hosting.get("checked"):
+        sources_checked.append("Hosting location (IPinfo)")
+        pretends_brand = any(r.startswith("The address mentions") for r in heuristics["reasons"])
+        if pretends_brand and hosting.get("country_code") and hosting["country_code"] != "US":
+            heuristics["reasons"].append(
+                f"It pretends to be a well-known company but is hosted in {hosting.get('country') or hosting['country_code']}."
+            )
+            flagged_urls.add(url)
+    details["hosting"] = hosting
 
     # --- Google Safe Browsing (optional, only if a key is set) ---
     if GOOGLE_SAFE_BROWSING_API_KEY != "REPLACE_WITH_REAL_KEY":
