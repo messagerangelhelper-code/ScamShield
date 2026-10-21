@@ -26,14 +26,14 @@ function PricingPlans() {
   return (
     <section className="pricing-plans">
       <h2>Plans</h2>
-      <p className="subtext">You've used {usage} of 3 free checks.</p>
+      <p className="subtext">You've used {usage} of 3 free checks this month. Free checks refresh on the 1st.</p>
 
       <div className="plans-row">
         <div className="plan-card">
           <h3>Free</h3>
           <p className="price">$0</p>
           <ul>
-            <li>3 total checks</li>
+            <li>3 checks every month</li>
             <li>Basic red-flag scoring</li>
           </ul>
         </div>
