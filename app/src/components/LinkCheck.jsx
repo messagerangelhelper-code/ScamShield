@@ -98,6 +98,13 @@ function LinkCheck() {
           {result.details?.domain_age?.is_new_domain && (
             <p>This website was registered only {result.details.domain_age.age_days} days ago — scam sites are usually brand new.</p>
           )}
+          {result?.details?.hosting?.checked && (
+            <p className="subtext">
+              Hosted in {result.details.hosting.country}{result.details.hosting.network ? ` on ${result.details.hosting.network}` : ""}.
+              {" "}IP address data is powered by{" "}
+              <a href="https://ipinfo.io" target="_blank" rel="noopener noreferrer">IPinfo</a>.
+            </p>
+          )}
           {result.sources_checked && result.sources_checked.length > 0 && (
             <p className="subtext">
               Checked against: {result.sources_checked.join(", ")}
