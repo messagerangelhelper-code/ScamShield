@@ -10,11 +10,9 @@ import InsuranceCheck from "./components/InsuranceCheck";
 import MedicalCheck from "./components/MedicalCheck";
 import CharityCheck from "./components/CharityCheck";
 import TaxScamCheck from "./components/TaxScamCheck";
-import AdminReset from "./components/AdminReset";
 import USAFlagIcon from "./components/USAFlagIcon";
 
 function App() {
-  const isAdmin = new URLSearchParams(window.location.search).get("admin") === "true";
 
   return (
     <main>
@@ -43,7 +41,6 @@ function App() {
       <TaxScamCheck />
       <IC3Report />
       <PricingPlans />
-      {isAdmin && <AdminReset />}
     </main>
   );
 }
