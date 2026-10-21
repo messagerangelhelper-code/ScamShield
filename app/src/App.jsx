@@ -1,6 +1,7 @@
 import Dashboard from "./components/Dashboard";
 import ScamCheck from "./components/ScamCheck";
 import LinkCheck from "./components/LinkCheck";
+import QRCheck from "./components/QRCheck";
 import CryptoCheck from "./components/CryptoCheck";
 import IC3Report from "./components/IC3Report";
 import PricingPlans from "./components/PricingPlans";
@@ -34,6 +35,7 @@ function App() {
       <Dashboard />
       <ScamCheck />
       <LinkCheck />
+      <QRCheck />
       <CryptoCheck />
       <InsuranceCheck />
       <MedicalCheck />
