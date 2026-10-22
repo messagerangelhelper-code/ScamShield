@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { addEvidence } from "../utils/caseFile";
 import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -40,6 +41,13 @@ function PhoneCheck() {
       }
       setResult(data);
       recordCheck();
+      addEvidence({
+        type: "Phone number",
+        subject: data.formatted || number.trim(),
+        verdict: data.risk,
+        reasons: data.reasons || [],
+        details: [data.country, data.location, data.line_type !== "Unknown" ? data.line_type : "", claimed.trim() ? `Says they're: ${claimed.trim()}` : ""].filter(Boolean).join(" · "),
+      });
     } catch (err) {
       setError(err.message || "Couldn't check this number right now.");
     } finally {

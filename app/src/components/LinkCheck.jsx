@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { addEvidence } from "../utils/caseFile";
 import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
 import VoiceInput from "./VoiceInput";
 
@@ -38,6 +39,18 @@ function LinkCheck() {
 
       setResult(data);
       recordCheck();
+      const flagged = data.flagged_urls && data.flagged_urls.length > 0;
+      const age = data.details?.domain_age;
+      addEvidence({
+        type: "Link",
+        subject: url.trim(),
+        verdict: flagged ? "high" : "low",
+        reasons: [
+          ...(data.details?.heuristics?.reasons || []),
+          age?.is_new_domain ? `Website was registered only ${age.age_days} days ago.` : null,
+        ],
+        details: data.details?.hosting?.checked ? `Hosted in ${data.details.hosting.country}` : "",
+      });
     } catch (err) {
       setError(err.message || "Couldn't check this link right now.");
     } finally {

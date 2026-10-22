@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { addEvidence } from "../utils/caseFile";
 
 // Reads the hidden details (EXIF) stored inside a JPEG photo, on the device.
 // Returns null when the photo has none (common for pictures saved from the web).
@@ -91,13 +92,28 @@ function PhotoCheck() {
     }
     setError("");
     setPreview(URL.createObjectURL(file));
+    let info = null;
     try {
       const buffer = await file.slice(0, 256 * 1024).arrayBuffer();
-      setDetails(readExif(buffer));
+      info = readExif(buffer);
     } catch {
-      setDetails(null);
+      info = null;
     }
+    setDetails(info);
     setChecked(true);
+    addEvidence({
+      type: "Photo",
+      subject: file.name || "Photo",
+      verdict: info && info.software && EDIT_TOOLS.test(info.software) ? "caution" : "low",
+      reasons: !info
+        ? ["No hidden camera details (common for photos sent through apps or saved from websites)."]
+        : [
+            info.make || info.model ? `Taken with ${[info.make, info.model].filter(Boolean).join(" ")}` : null,
+            info.taken ? `Date taken: ${prettyDate(info.taken) || info.taken}` : null,
+            info.software && EDIT_TOOLS.test(info.software) ? `Edited with ${info.software}` : null,
+          ],
+      details: "Next step: run a reverse image search to see if it appears under another name.",
+    });
   }
 
   const notes = [];

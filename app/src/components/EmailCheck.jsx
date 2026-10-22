@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { addEvidence } from "../utils/caseFile";
 import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -40,6 +41,13 @@ function EmailCheck() {
       }
       setResult(data);
       recordCheck();
+      addEvidence({
+        type: "Email sender",
+        subject: data.email,
+        verdict: data.risk,
+        reasons: data.reasons || [],
+        details: claimed.trim() ? `Says they're: ${claimed.trim()}` : "",
+      });
     } catch (err) {
       setError(err.message || "Couldn't check this email right now.");
     } finally {

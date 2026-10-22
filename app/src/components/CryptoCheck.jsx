@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { addEvidence } from "../utils/caseFile";
 import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -41,6 +42,17 @@ function CryptoCheck() {
       if (data.error) throw new Error(data.error);
       setResult(data);
       recordCheck();
+      addEvidence({
+        type: "Crypto wallet",
+        subject: address.trim(),
+        verdict: data.risk_level === "high" ? "high" : data.risk_level === "low" ? "low" : "caution",
+        reasons: [
+          data.category ? `Category: ${data.category}` : null,
+          data.label ? `Known as: ${data.label}` : null,
+          data.message || null,
+        ],
+        details: data.aml_score !== undefined ? `Risk score ${data.aml_score} / 100 on ${chain}` : chain,
+      });
     } catch (err) {
       setError(err.message || "Something went wrong checking this address.");
     } finally {

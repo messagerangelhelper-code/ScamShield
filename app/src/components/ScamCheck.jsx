@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { addEvidence } from "../utils/caseFile";
 import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
 import { isSeniorMode } from "./SeniorMode";
 import DecoyCard from "./DecoyCard";
@@ -52,7 +53,7 @@ function ScamCheck() {
           if (urlData.configured && urlData.flagged_urls.length > 0) {
             data.flags = [
               ...data.flags,
-              `This link is on Google's known scam/phishing list: ${urlData.flagged_urls[0]}`,
+              `This link failed the link check (scam lists, website age and warning signs): ${urlData.flagged_urls[0]}`,
             ];
             data.risk_score = Math.min(100, data.risk_score + 40);
             data.risk_level = data.risk_score >= 50 ? "high" : data.risk_level;
@@ -69,6 +70,12 @@ function ScamCheck() {
 
       setResult(data);
       recordCheck();
+      addEvidence({
+        type: "Message",
+        subject: input.trim().replace(/\s+/g, " ").slice(0, 140) + (input.trim().length > 140 ? "…" : ""),
+        verdict: data.risk_level === "high" ? "high" : data.risk_level === "low" ? "low" : "caution",
+        reasons: data.flags || [],
+      });
 
       // Update local dashboard stats
       const saved = JSON.parse(localStorage.getItem("scamshield_stats")) || {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { addEvidence } from "../utils/caseFile";
 import jsQR from "jsqr";
 import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
 
@@ -87,6 +88,16 @@ function QRCheck() {
       const data = await res.json();
       setResult(data);
       recordCheck();
+      const flagged = data.flagged_urls && data.flagged_urls.length > 0;
+      addEvidence({
+        type: "QR code link",
+        subject: link,
+        verdict: flagged ? "high" : "low",
+        reasons: [
+          ...(data.details?.heuristics?.reasons || []),
+          data.details?.domain_age?.is_new_domain ? `Website was registered only ${data.details.domain_age.age_days} days ago.` : null,
+        ],
+      });
     } catch (err) {
       setError(err.message || "Couldn't read that QR code right now.");
     } finally {

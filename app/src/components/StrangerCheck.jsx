@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { addEvidence } from "../utils/caseFile";
 
 const CHECKLISTS = {
   dating: {
@@ -75,11 +76,23 @@ const CHECKLISTS = {
 function StrangerCheck() {
   const [kind, setKind] = useState("dating");
   const [ticked, setTicked] = useState({});
+  const [saved, setSaved] = useState("");
   const list = CHECKLISTS[kind];
   const marks = ticked[kind] || [];
   const count = marks.length;
 
+  function saveToReport() {
+    addEvidence({
+      type: `Checklist: ${list.tab}`,
+      subject: `${count} of ${list.items.length} red flags`,
+      verdict: risk === "medium" ? "caution" : risk,
+      reasons: marks.slice().sort((a, b) => a - b).map((i) => list.items[i]),
+    });
+    setSaved(kind);
+  }
+
   function toggle(i) {
+    setSaved("");
     setTicked((t) => {
       const cur = t[kind] || [];
       return { ...t, [kind]: cur.includes(i) ? cur.filter((x) => x !== i) : [...cur, i] };
@@ -133,6 +146,9 @@ function StrangerCheck() {
         <p>{body}</p>
         <ul>{list.next.map((n) => <li key={n}>{n}</li>)}</ul>
       </div>
+      <button type="button" onClick={saveToReport} disabled={saved === kind}>
+        {saved === kind ? "Added to your Detective Report" : "Add to my Detective Report"}
+      </button>
 
       <div className="button-row">
         {list.links.map((l) => (
