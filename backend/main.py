@@ -288,7 +288,7 @@ async def health_sources():
                 "detail": result.get("reason", "Unexpected response")}
 
     async def check_urlhaus():
-        key = os.getenv("URLHAUS_AUTH_KEY")
+        key = (os.getenv("URLHAUS_AUTH_KEY") or "").strip()
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(URLHAUS_URL, data={"url": "https://example.com/"},
@@ -326,7 +326,7 @@ async def health_sources():
                 "detail": f"{r.get('score', 0)} warning signs on a known-bad test link"}
 
     async def check_ipinfo():
-        if not os.getenv("IPINFO_TOKEN"):
+        if not (os.getenv("IPINFO_TOKEN") or "").strip():
             return {"name": "Hosting location (IPinfo)", "status": "NEEDS KEY",
                     "detail": "Add a free IPINFO_TOKEN on Render."}
         r = await lookup_hosting("https://8.8.8.8")
@@ -444,7 +444,7 @@ async def lookup_hosting(url: str) -> dict:
     import socket
     from urllib.parse import urlparse
 
-    token = os.getenv("IPINFO_TOKEN")
+    token = (os.getenv("IPINFO_TOKEN") or "").strip()
     if not token:
         return {"checked": False, "reason": "not configured"}
     try:
@@ -708,7 +708,7 @@ async def check_urls(payload: URLCheckRequest):
 
     # --- URLhaus ---
     # Optional: set URLHAUS_AUTH_KEY on Render if abuse.ch requires it.
-    urlhaus_key = os.getenv("URLHAUS_AUTH_KEY")
+    urlhaus_key = (os.getenv("URLHAUS_AUTH_KEY") or "").strip()
     try:
         headers = {"Auth-Key": urlhaus_key} if urlhaus_key else {}
         async with httpx.AsyncClient(timeout=10) as client:
