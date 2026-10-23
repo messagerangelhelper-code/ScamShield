@@ -1,5 +1,89 @@
 import { useEffect, useState } from "react";
 import { useCaseFile, removeEvidence, setCaseTitle, setPreparedBy, clearCase } from "../utils/caseFile";
+import { useAuth, currentToken } from "../utils/auth";
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const CATEGORIES = [
+  ["task_job", "Task or job scam"], ["investment", "Investment or crypto"], ["romance", "Romance or new friend"],
+  ["delivery_toll", "Fake delivery or toll"], ["account_alert", "Fake bank or account alert"],
+  ["government", "Government impersonation (IRS, Medicare, police)"], ["tech_support", "Tech support"],
+  ["rental_marketplace", "Rental or Marketplace"], ["other", "Other"],
+];
+const STATES = "AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" ");
+
+function SharePanel({ data }) {
+  const { enabled, user } = useAuth();
+  const [category, setCategory] = useState("task_job");
+  const [state, setState] = useState("");
+  const [agree, setAgree] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+  if (!enabled) return null;
+  const shareable = data.items.filter((i) => i.verdict !== "low");
+
+  async function share() {
+    setError("");
+    setResult("");
+    setBusy(true);
+    try {
+      const res = await fetch(`${API_URL}/api/network/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await currentToken()}` },
+        body: JSON.stringify({
+          case_id: data.caseId || "",
+          category,
+          state,
+          items: shareable.map((i) => ({ type: i.type, subject: i.subject, verdict: i.verdict })),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || "Couldn't share right now. Please try again in a minute.");
+      setResult(body.message);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="share-panel">
+      <h3>Share with the {BRAND} network</h3>
+      <p className="subtext">
+        Warn everyone else: share the scammer's phone numbers, websites, emails, wallets and usernames from this
+        case. Anyone who checks them will see they were reported. Your name, your messages and this report are
+        never shared.
+      </p>
+      {!user ? (
+        <p className="subtext"><a href="#account">Sign in or create a free account</a> to share.</p>
+      ) : shareable.length === 0 ? (
+        <p className="subtext">Nothing to share yet. Only checks that found warning signs can be shared.</p>
+      ) : (
+        <>
+          <label className="field-label" htmlFor="share-cat">What kind of scam was it?</label>
+          <select id="share-cat" value={category} onChange={(e) => setCategory(e.target.value)}>
+            {CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <label className="field-label" htmlFor="share-state">Your state (optional)</label>
+          <select id="share-state" value={state} onChange={(e) => setState(e.target.value)}>
+            <option value="">Prefer not to say</option>
+            {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <label className="check-item">
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+            <span>I believe these clues came from a scammer, and I'm sharing them honestly to warn others.</span>
+          </label>
+          <button type="button" onClick={share} disabled={!agree || busy}>
+            {busy ? "Sharing..." : `Share ${shareable.length} flagged item${shareable.length === 1 ? "" : "s"}`}
+          </button>
+        </>
+      )}
+      {result && <p className="subtext" role="status">{result}</p>}
+      {error && <p className="error">{error}</p>}
+    </div>
+  );
+}
 
 const BRAND = "ScamShield";
 
@@ -263,6 +347,7 @@ function DetectiveReport() {
               <button type="button" onClick={downloadReport}>Download report</button>
             </div>
             <p className="subtext">The PDF is a formal investigation report with a report number, numbered exhibits and a signature line.</p>
+            <SharePanel data={data} />
             {status && <p className="subtext" role="status">{status}</p>}
             <button type="button" className="link-btn" onClick={newCase}>Start a new case</button>
           </>
