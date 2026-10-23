@@ -348,3 +348,16 @@ button:hover {
 .inside-guide ol { padding-left: 20px; line-height: 1.5; display: flex; flex-direction: column; gap: 8px; }
 .inside-guide ul { padding-left: 18px; margin: 4px 0 0; }
 .inside-guide .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* --- Account & sharing --- */
+.account-box, .account-form, .share-panel { display: flex; flex-direction: column; gap: 10px; }
+.account-box .field-label, .share-panel .field-label { font-size: 14px; font-weight: 600; color: #ffffff; }
+.account-box .link-btn, .share-panel .link-btn { align-self: flex-start; }
+.account-signed { display: flex; flex-direction: column; gap: 6px; }
+.account-signed p { margin: 0; }
+.share-panel { margin-top: 12px; padding: 14px 16px; border: 2px solid #3c6fd1; border-radius: 12px; background: #0d1b3d; }
+.share-panel h3 { margin: 0; }
+.share-panel a { color: #8fb3ff; }
+.share-panel button { align-self: flex-start; }
+.account-box select, .share-panel select { background: #0d1b3d; color: #f0f0f0; border: 1px solid #1e3358; border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+.detective-report .check-item { background: #12213d; }
