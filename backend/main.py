@@ -1,0 +1,1213 @@
+import os
+from dotenv import load_dotenv
+import httpx
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import json
+import firebase_admin
+from firebase_admin import credentials, firestore
+load_dotenv()
+
+app = FastAPI(title="ScamShield API")
+
+# Allow the frontend dev server (and your deployed domain) to call this API.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "https://scamshield.global",
+        "https://www.scamshield.global",
+        "https://scamshield-app-x89o.onrender.com",
+    ],
+    # Sister apps hosted on Render: ScamGuard Global and MyBillPilot
+    allow_origin_regex=r"https://(scamguard-global|mybillpilot)[a-z0-9-]*\.onrender\.com",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class CheckRequest(BaseModel):
+    text: str
+
+
+class CryptoCheckRequest(BaseModel):
+    address: str
+    chain: str = "ethereum"  # ethereum, bitcoin, bnb, tron
+
+
+class DecoyCardRequest(BaseModel):
+    reason: str = "prepaid_card_scam"  # what triggered the request, for your own logs
+
+
+class URLCheckRequest(BaseModel):
+    urls: list[str]
+
+
+class PhoneCheckRequest(BaseModel):
+    number: str
+    claimed: str = ""  # who the caller says they are, e.g. "my bank", "IRS"
+
+
+class EmailCheckRequest(BaseModel):
+    email: str
+    claimed: str = ""  # who the sender says they are, e.g. "PayPal"
+
+
+class InvestigateRequest(BaseModel):
+    text: str
+    sender: str = ""  # who sent it: a phone number or email, if known
+
+
+class TrustedContactRequest(BaseModel):
+    device_id: str
+    contact_name: str
+    contact_phone: str
+    codeword: str
+
+
+PUBLICAML_URL = "https://intelapi.publicaml.org/v1/enrich"
+
+# --- Google Safe Browsing config ---
+# Free tier: 10,000 requests/day. Get a key at:
+# https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com
+GOOGLE_SAFE_BROWSING_API_KEY = os.environ.get("GOOGLE_SAFE_BROWSING_API_KEY", "REPLACE_WITH_REAL_KEY")
+SAFE_BROWSING_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+
+# --- VirusTotal config ---
+# Free tier: 4 requests/minute. Get a key at: https://www.virustotal.com/gui/join-us
+VIRUSTOTAL_API_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "REPLACE_WITH_REAL_KEY")
+VIRUSTOTAL_URL = "https://www.virustotal.com/api/v3/urls"
+
+# --- URLhaus config ---
+# Free, no API key required. Community-driven malicious URL database
+# run by abuse.ch. Docs: https://urlhaus-api.abuse.ch/
+URLHAUS_URL = "https://urlhaus-api.abuse.ch/v1/url/"
+
+# --- Decoy card provider config ---
+# The real key lives in a local .env file (never committed) or your
+# hosting provider's environment variable settings — never in this file.
+CARD_PROVIDER_API_KEY = os.environ.get("LITHIC_API_KEY", "REPLACE_WITH_REAL_KEY")
+CARD_PROVIDER_BASE_URL = "https://sandbox.lithic.com/v1"  # sandbox until approved
+
+
+# --- Heuristic scam patterns ---
+# No paid API needed for this first layer — pure keyword/pattern scoring.
+RED_FLAGS = {
+    "urgency": {
+        "phrases": ["act now", "urgent", "limited time", "today only", "immediately"],
+        "weight": 15,
+        "message": "Uses urgency to pressure quick action",
+    },
+    "off_platform": {
+        "phrases": ["whatsapp", "text me directly", "call me instead", "email me at"],
+        "weight": 15,
+        "message": "Tries to move the conversation off the platform",
+    },
+    "payment_method": {
+        "phrases": ["wire transfer", "western union", "cash app", "zelle",
+                    "crypto", "bitcoin", "usdt"],
+        "weight": 25,
+        "message": "Requests an untraceable or irreversible payment method",
+    },
+    "prepaid_card_request": {
+        "phrases": ["gift card", "prepaid visa", "prepaid card", "vanilla visa",
+                    "steam card", "put money on a card", "load a card",
+                    "load money onto a card", "google play card", "itunes card"],
+        "weight": 30,
+        "message": "Asks you to load money onto a gift card or prepaid card — a major red flag",
+    },
+    "too_good": {
+        "phrases": ["guaranteed profit", "no risk", "double your money",
+                    "free money", "you've won"],
+        "weight": 20,
+        "message": "Promises unrealistic returns or guarantees",
+    },
+    "helper_offer": {
+        "phrases": ["i can help you cash out", "let me handle your account",
+                    "send me your login", "share your password"],
+        "weight": 30,
+        "message": "Offers to 'help' access your account or funds directly",
+    },
+    "new_account_request": {
+        "phrases": ["open a new bank account", "open a new account for this"],
+        "weight": 30,
+        "message": "Asks you to open a new account — a common fund-laundering tactic",
+    },
+    "insurance_fraud": {
+        "phrases": ["pay your deductible now", "wire the deductible",
+                    "policy will be cancelled unless you pay", "reactivate your medicare",
+                    "confirm your medicare number", "guaranteed approval no medical exam",
+                    "processing fee before we release your claim", "claims adjuster needs payment",
+                    "send the deductible by gift card", "verify your social security to keep coverage"],
+        "weight": 30,
+        "message": "Matches a common insurance-fraud pattern — real insurers never require upfront payment to process a claim or ask you to pay a deductible directly to an agent",
+    },
+    "charity_scam": {
+        "phrases": ["donate now to help victims", "urgent disaster relief donation",
+                    "wire your donation", "send your donation by gift card",
+                    "100% of your donation", "tax deductible donation today only",
+                    "help the families affected", "disaster relief fund needs your help now"],
+        "weight": 25,
+        "message": "Matches a common charity-scam pattern — legitimate charities never pressure urgent donations or ask for gift cards/wire transfers",
+    },
+    "medical_scam": {
+        "phrases": ["free genetic test", "free dna test", "free genetic testing",
+                    "free cancer screening", "free cancer test", "free back brace",
+                    "free knee brace", "free braces", "free medical equipment",
+                    "free diabetic supplies", "free diabetes supplies", "free covid test",
+                    "free heart test", "free cardiovascular test",
+                    "medicare covers it at no cost", "just need your medicare number",
+                    "give me your medicare number", "read me your medicare number",
+                    "your medicare card is expiring", "new medicare card fee",
+                    "your medicare benefits will be cancelled", "remote patient monitoring at no cost",
+                    "just swab your cheek", "cheek swab"],
+        "weight": 30,
+        "message": "Matches a common medical / Medicare scam — offers of 'free' tests, braces or supplies that need your Medicare number are used to bill Medicare in your name",
+    },
+    "pharmacy_scam": {
+        "phrases": ["no prescription needed", "no prescription required",
+                    "without a prescription", "no doctor visit needed",
+                    "cheap ozempic", "discount ozempic", "cheap semaglutide",
+                    "cheap weight loss injections", "miracle cure", "cures diabetes",
+                    "cure cancer naturally", "reverse your diabetes in",
+                    "doctors don't want you to know", "100% natural cure"],
+        "weight": 25,
+        "message": "Matches a fake-pharmacy or miracle-cure pattern — real pharmacies require a valid prescription, and real treatments never promise a cure",
+    },
+    "medical_bill_scam": {
+        "phrases": ["pay your medical bill by gift card", "hospital bill must be paid today",
+                    "medical debt will be sent to collections today",
+                    "pay your hospital bill now or", "outstanding medical balance pay immediately"],
+        "weight": 25,
+        "message": "Matches a fake medical bill or debt-collector pattern — real providers send itemized bills and never demand same-day payment by gift card or phone",
+    },
+    "delivery_toll_scam": {
+        "phrases": ["package is on hold", "package on hold", "unable to deliver your package",
+                    "redelivery", "re-delivery", "confirm your address", "update your address",
+                    "delivery attempt failed", "unpaid toll", "toll balance", "outstanding toll",
+                    "avoid late fees on your toll", "your parcel"],
+        "weight": 30,
+        "message": "Matches the fake delivery or unpaid-toll text scam — USPS, UPS, FedEx and toll agencies don't text links asking you to pay or confirm your address",
+    },
+    "account_alert": {
+        "phrases": ["your account is locked", "your account has been locked", "account has been suspended",
+                    "account will be suspended", "unusual sign-in activity", "verify your identity",
+                    "suspicious activity on your account", "your account has been compromised"],
+        "weight": 20,
+        "message": "Uses a fake account alert to scare you into acting — log in through the company's own app or website instead of any link",
+    },
+    "irs_impersonation": {
+        "phrases": ["irs will arrest you", "pay your back taxes immediately",
+                    "this is the irs calling", "your tax id has been suspended",
+                    "irs warrant issued", "pay the irs with gift cards",
+                    "final notice before legal action", "irs online account suspended",
+                    "verify your tax refund by providing"],
+        "weight": 30,
+        "message": "Matches a real IRS-impersonation pattern — the IRS contacts by mail first, never demands immediate payment by phone, and never accepts gift cards",
+    },
+}
+
+
+def analyze_text(text: str) -> dict:
+    lowered = text.lower()
+    score = 0
+    flags = []
+    trigger_decoy_card = False
+
+    for category, rule in RED_FLAGS.items():
+        for phrase in rule["phrases"]:
+            if phrase in lowered:
+                score += rule["weight"]
+                flags.append(rule["message"])
+                if category == "prepaid_card_request":
+                    trigger_decoy_card = True
+                break  # only count each category once
+
+    score = min(score, 100)
+
+    if score >= 50:
+        level = "high"
+    elif score >= 20:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "risk_score": score,
+        "risk_level": level,
+        "flags": flags,
+        "trigger_decoy_card": trigger_decoy_card,
+    }
+
+
+@app.get("/")
+def root():
+    return {"status": "ScamShield API is running"}
+
+
+@app.post("/api/check")
+def check_text(payload: CheckRequest):
+    return analyze_text(payload.text)
+
+
+@app.post("/api/crypto-check")
+async def check_crypto_address(payload: CryptoCheckRequest):
+    """
+    Checks a crypto wallet address against PublicAML's free, keyless
+    AML/scam-screening API before a user sends funds to it.
+    Docs: https://publicaml.org/
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                PUBLICAML_URL,
+                json={"addresses": [{"wallet_address": payload.address, "chain": payload.chain}]},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError:
+        return {
+            "error": "Could not reach the address-screening service. Try again shortly.",
+            "address": payload.address,
+        }
+
+    entities = data.get("entities", [])
+    if not entities:
+        return {
+            "address": payload.address,
+            "risk_level": "unknown",
+            "message": "No data found for this address — proceed with caution.",
+        }
+
+    entity = entities[0]
+    score = entity.get("aml_score", 0)
+
+    if score >= 70:
+        level = "high"
+    elif score >= 30:
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "address": payload.address,
+        "chain": entity.get("chain", payload.chain),
+        "aml_score": score,
+        "risk_level": level,
+        "category": entity.get("category"),
+        "label": entity.get("label"),
+    }
+
+
+@app.get("/api/health/sources")
+async def health_sources():
+    """
+    Open this in a browser to confirm every outside data source ScamShield
+    (and ScamGuard Global) depends on is answering. Uses harmless test
+    inputs only. Each source reports OK, NEEDS KEY or FAILED.
+    """
+    import asyncio
+
+    async def check_rdap():
+        result = await check_domain_age("https://example.com")
+        if result.get("checked") and result.get("age_days", 0) > 1000:
+            return {"name": "Website age (RDAP)", "status": "OK",
+                    "detail": f"example.com is {result['age_days']} days old"}
+        return {"name": "Website age (RDAP)", "status": "FAILED",
+                "detail": result.get("reason", "Unexpected response")}
+
+    async def check_urlhaus():
+        key = (os.getenv("URLHAUS_AUTH_KEY") or "").strip()
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(URLHAUS_URL, data={"url": "https://example.com/"},
+                                         headers={"Auth-Key": key} if key else {})
+            if resp.status_code in (401, 403):
+                return {"name": "URLhaus scam list", "status": "NEEDS KEY",
+                        "detail": "URLhaus refused the request. Add a free URLHAUS_AUTH_KEY on Render."}
+            resp.raise_for_status()
+            qs = resp.json().get("query_status")
+            if qs in ("ok", "no_results"):
+                return {"name": "URLhaus scam list", "status": "OK", "detail": f"answered ({qs})"}
+            return {"name": "URLhaus scam list", "status": "FAILED", "detail": f"unexpected answer: {qs}"}
+        except Exception as e:
+            return {"name": "URLhaus scam list", "status": "FAILED", "detail": type(e).__name__}
+
+    async def check_publicaml():
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(PUBLICAML_URL, json={"addresses": [{
+                    "wallet_address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+                    "chain": "ethereum"}]})
+            if resp.status_code in (401, 403):
+                return {"name": "Crypto wallet check (PublicAML)", "status": "NEEDS KEY",
+                        "detail": f"refused with HTTP {resp.status_code}"}
+            resp.raise_for_status()
+            resp.json()
+            return {"name": "Crypto wallet check (PublicAML)", "status": "OK", "detail": "answered"}
+        except Exception as e:
+            return {"name": "Crypto wallet check (PublicAML)", "status": "FAILED", "detail": type(e).__name__}
+
+    def check_builtin():
+        r = check_url_heuristics("http://paypal-verify-login.xyz")
+        ok = r.get("suspicious") is True
+        return {"name": "Built-in link analysis", "status": "OK" if ok else "FAILED",
+                "detail": f"{r.get('score', 0)} warning signs on a known-bad test link"}
+
+    async def check_ipinfo():
+        if not (os.getenv("IPINFO_TOKEN") or "").strip():
+            return {"name": "Hosting location (IPinfo)", "status": "NEEDS KEY",
+                    "detail": "Add a free IPINFO_TOKEN on Render."}
+        r = await lookup_hosting("https://8.8.8.8")
+        if r.get("checked") and r.get("country_code"):
+            return {"name": "Hosting location (IPinfo)", "status": "OK",
+                    "detail": f"8.8.8.8 is in {r.get('country')} on {r.get('network')}"}
+        return {"name": "Hosting location (IPinfo)", "status": "FAILED",
+                "detail": r.get("reason", "Unexpected response")}
+
+    def check_phone_lib():
+        r = analyze_phone("+1 876 555 0134")
+        ok = r.get("valid") and r.get("risk") == "high"
+        return {"name": "Phone number check", "status": "OK" if ok else "FAILED",
+                "detail": "flags a Jamaica one-ring number" if ok else r.get("error", "Unexpected result")}
+
+    async def check_dns():
+        r = await lookup_mail_servers("gmail.com")
+        if r.get("checked") and r.get("has_mail"):
+            return {"name": "Email domain check (DNS)", "status": "OK", "detail": "gmail.com accepts email"}
+        return {"name": "Email domain check (DNS)", "status": "FAILED", "detail": r.get("reason", "Unexpected response")}
+
+    results = list(await asyncio.gather(check_rdap(), check_urlhaus(), check_publicaml(), check_ipinfo(), check_dns()))
+    results.insert(0, check_phone_lib())
+    results.insert(0, check_builtin())
+    overall = "ALL OK" if all(r["status"] == "OK" for r in results) else "NEEDS ATTENTION"
+    return {"overall": overall, "checks": results}
+
+
+@app.post("/api/trusted-contact")
+def save_trusted_contact(payload: TrustedContactRequest):
+    if not db:
+        return {"error": "Firebase is not configured on the server yet."}
+    db.collection("trusted_contacts").document(payload.device_id).set({
+        "contact_name": payload.contact_name,
+        "contact_phone": payload.contact_phone,
+        "codeword": payload.codeword,
+    })
+    return {"saved": True}
+
+
+@app.get("/api/trusted-contact/{device_id}")
+def get_trusted_contact(device_id: str):
+    if not db:
+        return {"error": "Firebase is not configured on the server yet."}
+    doc = db.collection("trusted_contacts").document(device_id).get()
+    if not doc.exists:
+        return {"found": False}
+    return {"found": True, **doc.to_dict()}
+
+
+@app.post("/api/decoy-card")
+async def request_decoy_card(payload: DecoyCardRequest):
+    """
+    Requests a single-use, near-zero-balance virtual card from the card
+    provider to hand to a scammer instead of real funds. The provider
+    (Lithic/Stripe Issuing/etc.) is the actual regulated issuer — ScamShield
+    never holds card-issuing licensing itself, only calls their API.
+
+    NOT LIVE YET: requires a real provider account, approval of this exact
+    use case by their risk/compliance team, and a real API key in
+    CARD_PROVIDER_API_KEY before this will return a usable card.
+    """
+    if CARD_PROVIDER_API_KEY == "REPLACE_WITH_REAL_KEY":
+        return {
+            "error": "Decoy card provider not yet configured. "
+                     "This feature requires a live card-issuing partnership."
+        }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                f"{CARD_PROVIDER_BASE_URL}/cards",
+                headers={"Authorization": f"Bearer {CARD_PROVIDER_API_KEY}"},
+                json={
+                    "type": "SINGLE_USE",
+                    "spend_limit": 100,  # cents — effectively $1, adjust per provider minimums
+                    "memo": f"ScamShield decoy - {payload.reason}",
+                },
+            )
+            resp.raise_for_status()
+            card = resp.json()
+    except httpx.HTTPError:
+        return {"error": "Could not reach the card provider. Try again shortly."}
+
+    # Only return what the user needs to hand to the scammer —
+    # never log or store the full card number/CVV server-side.
+    return {
+        "card_number": card.get("pan"),
+        "expiry": card.get("exp_month", "") + "/" + card.get("exp_year", ""),
+        "cvv": card.get("cvv"),
+        "note": "This card has a near-zero balance and is being monitored. "
+                "Any attempt to use it will be logged as evidence.",
+    }
+
+
+@app.post("/api/decoy-card/webhook")
+async def decoy_card_webhook(payload: dict):
+    """
+    Receives authorization-attempt events from the card provider when
+    someone tries to use a decoy card. Even a DECLINED attempt includes
+    merchant name, location, and timestamp — direct evidence for an IC3
+    report. Wire this URL into your provider's webhook settings once live.
+    """
+    # TODO: persist this to a database keyed by card ID, and/or
+    # auto-populate the IC3Report evidence fields with merchant/location data.
+    merchant = payload.get("merchant", {})
+    return {
+        "received": True,
+        "merchant_name": merchant.get("descriptor"),
+        "merchant_city": merchant.get("city"),
+        "merchant_country": merchant.get("country"),
+        "attempted_amount": payload.get("amount"),
+        "status": payload.get("result"),  # e.g. "DECLINED"
+    }
+
+
+IPINFO_LITE_URL = "https://api.ipinfo.io/lite/{ip}"
+
+
+async def lookup_hosting(url: str) -> dict:
+    """
+    Finds where a website's server actually is, using IPinfo Lite (free,
+    commercial use allowed with attribution: "IP address data is powered
+    by IPinfo"). Needs IPINFO_TOKEN set on Render; skipped otherwise.
+    """
+    import asyncio
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    token = (os.getenv("IPINFO_TOKEN") or "").strip()
+    if not token:
+        return {"checked": False, "reason": "not configured"}
+    try:
+        raw = url if "://" in url else "http://" + url
+        host = (urlparse(raw).hostname or "").lower()
+        if not host:
+            return {"checked": False, "reason": "No website name in that link"}
+        try:
+            ip = str(ipaddress.ip_address(host))
+        except ValueError:
+            infos = await asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM)
+            v4 = [i[4][0] for i in infos if i[0] == socket.AF_INET]
+            ip = (v4 or [infos[0][4][0]])[0]
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(IPINFO_LITE_URL.format(ip=ip), params={"token": token})
+        if resp.status_code in (401, 403):
+            return {"checked": False, "reason": "IPinfo token was refused"}
+        resp.raise_for_status()
+        d = resp.json()
+        return {
+            "checked": True,
+            "ip": ip,
+            "country": d.get("country"),
+            "country_code": d.get("country_code"),
+            "network": d.get("as_name"),
+            "network_domain": d.get("as_domain"),
+        }
+    except socket.gaierror:
+        return {"checked": False, "reason": "That website name doesn't exist"}
+    except Exception:
+        return {"checked": False, "reason": "Lookup failed"}
+
+
+async def check_domain_age(url: str) -> dict:
+    """
+    Checks how recently a domain was registered using RDAP (the public,
+    keyless WHOIS replacement). Domains registered in the last 30 days
+    are a major red flag — scam sites are almost always brand new,
+    while legitimate businesses' domains are typically months or years old.
+    """
+    from urllib.parse import urlparse
+    from datetime import datetime, timezone
+
+    try:
+        raw = url if "://" in url else "http://" + url
+        host = (urlparse(raw).hostname or "").lower()
+        labels = [p for p in host.split(".") if p]
+        if labels and all(p.isdigit() for p in labels):
+            return {"checked": False, "reason": "Link uses an IP address, not a website name"}
+        # RDAP only knows registered domains, not sub-domains like
+        # "login.example.com", so reduce to the registered part.
+        if len(labels) >= 3 and labels[-2] in ("co", "com", "org", "net", "gov", "ac", "edu"):
+            domain = ".".join(labels[-3:])
+        else:
+            domain = ".".join(labels[-2:])
+        if not domain:
+            return {"checked": False, "reason": "No website name in that link"}
+
+        # rdap.org answers with a redirect to the registry that holds the
+        # domain (e.g. Verisign for .com), so redirects must be followed.
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(f"https://rdap.org/domain/{domain}")
+            if resp.status_code != 200:
+                return {"checked": False, "reason": "No registration data found"}
+            data = resp.json()
+
+        events = data.get("events", [])
+        registered = next((e["eventDate"] for e in events if e.get("eventAction") == "registration"), None)
+        if not registered:
+            return {"checked": False, "reason": "Registration date unavailable"}
+
+        reg_date = datetime.fromisoformat(registered.replace("Z", "+00:00"))
+        age_days = (datetime.now(timezone.utc) - reg_date).days
+
+        return {
+            "checked": True,
+            "domain": domain,
+            "registered_on": registered,
+            "age_days": age_days,
+            "is_new_domain": age_days < 30,
+        }
+    except Exception:
+        return {"checked": False, "reason": "Lookup failed"}
+
+
+SUSPICIOUS_TLDS = {
+    "zip", "mov", "top", "xyz", "click", "link", "icu", "cyou", "sbs", "rest",
+    "gq", "tk", "ml", "cf", "ga", "work", "support", "country", "loan", "bond",
+}
+URL_SHORTENERS = {
+    "bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly",
+    "cutt.ly", "rb.gy", "shorturl.at", "tiny.cc", "rebrand.ly",
+}
+SCAM_KEYWORDS = (
+    "login", "signin", "verify", "secure", "account", "update", "wallet",
+    "confirm", "suspend", "unlock", "billing", "refund", "claim", "prize",
+    "support", "security", "alert", "helpdesk", "service",
+)
+BRAND_NAMES = (
+    "paypal", "amazon", "apple", "microsoft", "google", "netflix", "chase",
+    "wellsfargo", "bankofamerica", "irs", "usps", "fedex", "ups", "coinbase",
+    "venmo", "cashapp", "zelle", "medicare", "socialsecurity",
+)
+
+
+def check_url_heuristics(url: str) -> dict:
+    """
+    Keyless, offline checks on the shape of the link itself. Needs no
+    account, API key, or third party. Returns reasons in plain English.
+    """
+    import re
+    from urllib.parse import urlparse
+
+    reasons = []
+    raw = url.strip()
+    parsed = urlparse(raw if "://" in raw else "http://" + raw)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return {"score": 0, "reasons": [], "suspicious": False}
+
+    labels = host.split(".")
+    tld = labels[-1]
+    base = ".".join(labels[-2:]) if len(labels) >= 2 else host
+    main_label = labels[-2] if len(labels) >= 2 else host
+
+    if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}", host):
+        reasons.append("The link uses a raw IP address instead of a website name.")
+    if parsed.scheme == "http":
+        reasons.append("The link isn't encrypted (http, not https).")
+    if "@" in parsed.netloc:
+        reasons.append("The link contains an @ sign, a trick used to hide the real destination.")
+    if "xn--" in host:
+        reasons.append("The web address uses look-alike international characters (punycode).")
+    if base in URL_SHORTENERS:
+        reasons.append("This is a shortened link, so the real destination is hidden.")
+    if tld in SUSPICIOUS_TLDS:
+        reasons.append(f"The .{tld} ending is commonly used by scam sites.")
+    if len(labels) > 4:
+        reasons.append("The address has an unusually long chain of sub-domains.")
+    if host.count("-") >= 3:
+        reasons.append("The address has many hyphens, common in fake look-alike sites.")
+    if len(raw) > 100:
+        reasons.append("The link is unusually long.")
+
+    for brand in BRAND_NAMES:
+        if brand in host and main_label != brand:
+            reasons.append(f"The address mentions '{brand}' but isn't the real {brand} website.")
+            break
+    else:
+        # Look-alike spellings such as "amaz0n" or "paypa1"
+        swapped = host.translate(str.maketrans({"0": "o", "1": "l", "3": "e", "5": "s", "4": "a", "7": "t"}))
+        for brand in BRAND_NAMES:
+            if brand in swapped and brand not in host:
+                reasons.append(f"The address swaps letters for numbers to look like '{brand}'. That's a classic fake.")
+                reasons.append(f"It isn't the real {brand} website.")
+                break
+
+    if any(k in host for k in SCAM_KEYWORDS) and any(b in host for b in BRAND_NAMES):
+        reasons.append("The address mixes a well-known brand with words like 'verify' or 'login'.")
+
+    return {"score": len(reasons), "reasons": reasons, "suspicious": len(reasons) >= 2}
+
+
+@app.post("/api/url-check")
+async def check_urls(payload: URLCheckRequest):
+    """
+    Checks URLs against multiple independent free/low-cost sources, since
+    no single database catches everything — especially brand-new scam
+    sites that haven't been reported anywhere yet:
+      - Google Safe Browsing (malware, phishing, unwanted software)
+      - VirusTotal (aggregates 70+ security engines' verdicts)
+      - URLhaus (community-reported malicious URLs)
+      - Domain age via RDAP (flags brand-new domains — a strong scam signal)
+
+    Returns which sources are actually configured, and a combined verdict.
+    A URL is flagged if ANY configured source flags it.
+    """
+    if not payload.urls:
+        return {"configured": False, "flagged_urls": [], "sources_checked": []}
+
+    url = payload.urls[0]
+    sources_checked = []
+    flagged_urls = set()
+    details = {}
+
+    # --- Domain age (RDAP) ---
+    domain_age = await check_domain_age(url)
+    sources_checked.append("Domain Age (RDAP)")
+    if domain_age.get("is_new_domain"):
+        flagged_urls.add(url)
+    details["domain_age"] = domain_age
+
+    # --- Built-in link checks (no account or key needed) ---
+    heuristics = check_url_heuristics(url)
+    sources_checked.append("Built-in link analysis")
+    if heuristics["suspicious"]:
+        flagged_urls.add(url)
+    details["heuristics"] = heuristics
+
+    # --- Hosting location (IPinfo Lite, optional) ---
+    hosting = await lookup_hosting(url)
+    if hosting.get("checked"):
+        sources_checked.append("Hosting location (IPinfo)")
+        pretends_brand = any(r.startswith("The address mentions") for r in heuristics["reasons"])
+        if pretends_brand and hosting.get("country_code") and hosting["country_code"] != "US":
+            heuristics["reasons"].append(
+                f"It pretends to be a well-known company but is hosted in {hosting.get('country') or hosting['country_code']}."
+            )
+            flagged_urls.add(url)
+    details["hosting"] = hosting
+
+    # --- Google Safe Browsing (optional, only if a key is set) ---
+    if GOOGLE_SAFE_BROWSING_API_KEY != "REPLACE_WITH_REAL_KEY":
+        sources_checked.append("Google Safe Browsing")
+        body = {
+            "client": {"clientId": "scamshield", "clientVersion": "1.0.0"},
+            "threatInfo": {
+                "threatTypes": [
+                    "MALWARE", "SOCIAL_ENGINEERING",
+                    "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION",
+                ],
+                "platformTypes": ["ANY_PLATFORM"],
+                "threatEntryTypes": ["URL"],
+                "threatEntries": [{"url": u} for u in payload.urls],
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{SAFE_BROWSING_URL}?key={GOOGLE_SAFE_BROWSING_API_KEY}", json=body
+                )
+                resp.raise_for_status()
+                matches = resp.json().get("matches", [])
+                for m in matches:
+                    flagged_urls.add(m["threat"]["url"])
+                details["safe_browsing"] = {"flagged": len(matches) > 0}
+        except httpx.HTTPError:
+            details["safe_browsing"] = {"error": "unreachable"}
+
+    # --- VirusTotal ---
+    if VIRUSTOTAL_API_KEY != "REPLACE_WITH_REAL_KEY":
+        sources_checked.append("VirusTotal")
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                submit_resp = await client.post(
+                    VIRUSTOTAL_URL,
+                    headers={"x-apikey": VIRUSTOTAL_API_KEY},
+                    data={"url": url},
+                )
+                submit_resp.raise_for_status()
+                analysis_id = submit_resp.json()["data"]["id"]
+
+                result_resp = await client.get(
+                    f"https://www.virustotal.com/api/v3/analyses/{analysis_id}",
+                    headers={"x-apikey": VIRUSTOTAL_API_KEY},
+                )
+                result_resp.raise_for_status()
+                stats = result_resp.json()["data"]["attributes"]["stats"]
+                malicious = stats.get("malicious", 0)
+                suspicious = stats.get("suspicious", 0)
+
+                if malicious > 0 or suspicious > 0:
+                    flagged_urls.add(url)
+                details["virustotal"] = {
+                    "malicious_votes": malicious,
+                    "suspicious_votes": suspicious,
+                }
+        except (httpx.HTTPError, KeyError):
+            details["virustotal"] = {"error": "unreachable or rate-limited"}
+
+    # --- URLhaus ---
+    # Optional: set URLHAUS_AUTH_KEY on Render if abuse.ch requires it.
+    urlhaus_key = (os.getenv("URLHAUS_AUTH_KEY") or "").strip()
+    try:
+        headers = {"Auth-Key": urlhaus_key} if urlhaus_key else {}
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(URLHAUS_URL, data={"url": url}, headers=headers)
+            if resp.status_code in (401, 403):
+                details["urlhaus"] = {"error": "needs key"}
+            else:
+                resp.raise_for_status()
+                result = resp.json()
+                sources_checked.append("URLhaus")
+                if result.get("query_status") == "ok":
+                    flagged_urls.add(url)
+                details["urlhaus"] = {
+                    "in_database": result.get("query_status") == "ok",
+                    "threat": result.get("threat"),
+                }
+    except (httpx.HTTPError, ValueError):
+        details["urlhaus"] = {"error": "unreachable"}
+
+    return {
+        "configured": len(sources_checked) > 0,
+        "sources_checked": sources_checked,
+        "flagged_urls": list(flagged_urls),
+        "details": details,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phone number check
+# Uses the open-source "phonenumbers" package (worldwide numbering rules),
+# which run entirely on our server — no account, key or outside lookup.
+# ---------------------------------------------------------------------------
+
+# Caribbean and Atlantic areas that share the US "+1" country code. Numbers
+# here look like US numbers but are international — the classic "one ring"
+# scam: they call once and hang up, hoping you call back and pay big
+# international fees.
+ONE_RING_REGIONS = {
+    "AG", "AI", "BB", "BM", "BS", "DM", "DO", "GD", "JM", "KN", "KY",
+    "LC", "MS", "SX", "TC", "TT", "VC", "VG",
+}
+GOV_WORDS = ("irs", "social security", "ssa", "medicare", "police", "sheriff", "fbi",
+             "government", "court", "marshal", "immigration", "dhs", "treasury")
+BANK_WORDS = ("bank", "chase", "wells", "citi", "capital one", "credit union", "paypal",
+              "venmo", "zelle", "cash app", "fraud department", "card")
+TECH_WORDS = ("microsoft", "apple", "amazon", "geek squad", "tech support", "norton", "mcafee")
+
+
+def _claimed_kind(claimed: str) -> str:
+    c = (claimed or "").lower()
+    if any(w in c for w in GOV_WORDS):
+        return "government"
+    if any(w in c for w in BANK_WORDS):
+        return "bank"
+    if any(w in c for w in TECH_WORDS):
+        return "tech"
+    return ""
+
+
+def analyze_phone(number: str, claimed: str = "") -> dict:
+    try:
+        import phonenumbers
+        from phonenumbers import geocoder, carrier, PhoneNumberType
+    except ImportError:
+        return {"valid": False, "error": "Phone checking isn't installed on the server yet."}
+
+    raw = (number or "").strip()
+    if not raw:
+        return {"valid": False, "error": "Enter a phone number."}
+
+    high, caution = [], []
+    try:
+        n = phonenumbers.parse(raw, "US")
+    except phonenumbers.NumberParseException:
+        return {
+            "valid": False, "risk": "high", "formatted": raw,
+            "reasons": ["This isn't a real phone number format. Scammers often show fake numbers on caller ID."],
+            "tips": [],
+        }
+
+    valid = phonenumbers.is_valid_number(n)
+    region = phonenumbers.region_code_for_number(n) or ""
+    place = geocoder.description_for_number(n, "en") or ""
+    country = geocoder.country_name_for_number(n, "en") or region
+    phone_company = carrier.name_for_number(n, "en") or ""
+    ntype = phonenumbers.number_type(n)
+    type_names = {
+        PhoneNumberType.MOBILE: "Mobile phone",
+        PhoneNumberType.FIXED_LINE: "Landline",
+        PhoneNumberType.FIXED_LINE_OR_MOBILE: "Landline or mobile",
+        PhoneNumberType.TOLL_FREE: "Toll-free number",
+        PhoneNumberType.PREMIUM_RATE: "Premium-rate number (costs money to call)",
+        PhoneNumberType.VOIP: "Internet phone number (VoIP)",
+        PhoneNumberType.SHARED_COST: "Shared-cost number",
+        PhoneNumberType.PERSONAL_NUMBER: "Personal forwarding number",
+        PhoneNumberType.PAGER: "Pager",
+        PhoneNumberType.UAN: "Company number",
+    }
+    line_type = type_names.get(ntype, "Unknown")
+    kind = _claimed_kind(claimed)
+
+    if not valid:
+        high.append("This isn't a valid phone number anywhere in the world. Caller ID can be faked, and scammers often show made-up numbers.")
+    else:
+        if region in ONE_RING_REGIONS:
+            high.append(
+                f"This number is in {country}, not the US — even though it starts like a US number. "
+                "Missed calls from these area codes are a known \"one ring\" scam: calling back can cost you expensive international fees."
+            )
+        elif region and region not in ("US", "CA"):
+            caution.append(f"This is an international number from {country}.")
+            if kind:
+                high.append(f"A real US {'agency' if kind == 'government' else 'company'} won't call you from a number in {country}.")
+        if ntype == PhoneNumberType.PREMIUM_RATE:
+            high.append("This is a premium-rate number. Calling it back can put large charges on your phone bill.")
+        if ntype == PhoneNumberType.VOIP:
+            caution.append("This is an internet phone number. Anyone can get one in minutes, without giving their real name.")
+        if ntype == PhoneNumberType.TOLL_FREE and kind == "bank":
+            caution.append("Toll-free numbers are cheap and easy to rent. Don't trust it just because it looks official.")
+
+    if kind == "government":
+        high.append("Government agencies like the IRS, Social Security and Medicare don't call to demand payment or threaten arrest. That's always a scam.")
+    elif kind == "bank":
+        caution.append("Banks never ask for your password, PIN or a code sent to your phone. If in doubt, hang up and call the number on the back of your card.")
+    elif kind == "tech":
+        high.append("Microsoft, Apple and other tech companies don't call you about viruses or problems with your computer.")
+
+    tips = [
+        "Caller ID can be faked. Even a local number or a real company's number can be a scammer.",
+        "Never call back a number from a voicemail or text. Look up the company's number yourself.",
+    ]
+    risk = "high" if high else ("caution" if caution else "low")
+    return {
+        "valid": valid,
+        "formatted": phonenumbers.format_number(n, phonenumbers.PhoneNumberFormat.INTERNATIONAL),
+        "country": country,
+        "region_code": region,
+        "location": place if place and place != country else "",
+        "line_type": line_type,
+        "phone_company": phone_company,
+        "risk": risk,
+        "reasons": high + caution,
+        "tips": tips,
+    }
+
+
+@app.post("/api/phone-check")
+def check_phone(payload: PhoneCheckRequest):
+    return analyze_phone(payload.number[:40], payload.claimed[:80])
+
+
+# ---------------------------------------------------------------------------
+# Email sender check
+# Keyless: built-in rules, website age (RDAP) and a public DNS lookup
+# (Cloudflare DNS-over-HTTPS) to see if the domain can even receive email.
+# ---------------------------------------------------------------------------
+
+FREE_EMAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "outlook.com", "hotmail.com",
+    "live.com", "msn.com", "aol.com", "icloud.com", "me.com", "mac.com", "proton.me",
+    "protonmail.com", "gmx.com", "gmx.us", "mail.com", "yandex.com", "yandex.ru", "zoho.com",
+    "att.net", "comcast.net", "verizon.net", "sbcglobal.net", "bellsouth.net", "cox.net",
+    "charter.net", "earthlink.net", "inbox.com", "tutanota.com", "fastmail.com", "qq.com",
+}
+DISPOSABLE_EMAIL_DOMAINS = {
+    "mailinator.com", "guerrillamail.com", "guerrillamail.net", "sharklasers.com", "10minutemail.com",
+    "temp-mail.org", "tempmail.com", "tempmail.net", "yopmail.com", "trashmail.com", "getnada.com",
+    "dispostable.com", "maildrop.cc", "throwawaymail.com", "fakeinbox.com", "mintemail.com",
+    "mohmal.com", "emailondeck.com", "burnermail.io", "tempail.com", "spamgourmet.com", "33mail.com",
+    "mailnesia.com", "mytemp.email", "tempr.email", "discard.email", "inboxkitten.com", "minuteinbox.com",
+}
+DNS_JSON_URL = "https://cloudflare-dns.com/dns-query"
+
+
+async def lookup_mail_servers(domain: str) -> dict:
+    """Asks public DNS whether a domain is set up to receive email."""
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            headers = {"accept": "application/dns-json"}
+            mx = await client.get(DNS_JSON_URL, params={"name": domain, "type": "MX"}, headers=headers)
+            mx.raise_for_status()
+            d = mx.json()
+            if d.get("Status") == 3:  # NXDOMAIN: the domain doesn't exist
+                return {"checked": True, "exists": False, "has_mail": False}
+            if any(a.get("type") == 15 for a in d.get("Answer", []) or []):
+                return {"checked": True, "exists": True, "has_mail": True}
+            a = await client.get(DNS_JSON_URL, params={"name": domain, "type": "A"}, headers=headers)
+            a.raise_for_status()
+            has_a = any(x.get("type") == 1 for x in a.json().get("Answer", []) or [])
+            return {"checked": True, "exists": True, "has_mail": has_a}
+    except Exception:
+        return {"checked": False, "reason": "DNS lookup failed"}
+
+
+def _slug(text: str) -> str:
+    import re
+    return re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+
+@app.post("/api/email-check")
+async def check_email(payload: EmailCheckRequest):
+    import re
+
+    email = (payload.email or "").strip().strip("<>").lower()[:254]
+    claimed = (payload.claimed or "").strip()[:80]
+    m = re.fullmatch(r"([^@\s]+)@([a-z0-9.-]+\.[a-z]{2,})", email)
+    if not m:
+        return {"valid": False, "risk": "high", "email": email,
+                "reasons": ["That isn't a complete email address. Copy the full address, like name@company.com."],
+                "tips": []}
+    local, domain = m.group(1), m.group(2)
+    high, caution = [], []
+    claimed_slug = _slug(claimed)
+    domain_slug = _slug(domain.rsplit(".", 1)[0])
+    is_free = domain in FREE_EMAIL_DOMAINS
+
+    if domain in DISPOSABLE_EMAIL_DOMAINS:
+        high.append(f"{domain} is a throwaway email service. Real businesses never use these.")
+
+    if is_free:
+        if len(claimed_slug) > 2:
+            high.append(f"A real {claimed} would email you from their own company address, not a free {domain} account.")
+        else:
+            caution.append(f"This is a free {domain} account. Anyone can make one in a minute under any name.")
+        for brand in BRAND_NAMES:
+            if brand in _slug(local):
+                high.append(f"The name before the @ uses '{brand}', but the email is a free {domain} account, not {brand}.")
+                break
+    else:
+        heur = check_url_heuristics("https://" + domain)
+        for r in heur["reasons"]:
+            if "isn't encrypted" in r:
+                continue
+            high.append(r.replace("The address", "The email address").replace("The link", "The email address"))
+        if claimed_slug and len(claimed_slug) > 2 and claimed_slug not in domain_slug and domain_slug not in claimed_slug:
+            caution.append(f"They say they're {claimed}, but the email comes from {domain}. Check that {domain} really belongs to {claimed}.")
+
+    age = {"checked": False}
+    mail = {"checked": False}
+    if not is_free and domain not in DISPOSABLE_EMAIL_DOMAINS:
+        import asyncio
+        age, mail = await asyncio.gather(check_domain_age("https://" + domain), lookup_mail_servers(domain))
+        if age.get("checked"):
+            if age["age_days"] < 30:
+                high.append(f"The email's website name was created only {age['age_days']} days ago. Scammers use brand-new names.")
+            elif age["age_days"] < 180:
+                caution.append(f"The email's website name is fairly new ({age['age_days']} days old).")
+        if mail.get("checked"):
+            if not mail.get("exists"):
+                high.append(f"{domain} doesn't exist. This email address is fake.")
+            elif not mail.get("has_mail"):
+                caution.append(f"{domain} isn't set up to receive email, so you can't reply to it. Real companies can receive replies.")
+
+    tips = [
+        "The sender name you see can say anything. Always look at the actual address after the @.",
+        "Don't click links or open attachments in an email you weren't expecting. Go to the company's website yourself.",
+    ]
+    risk = "high" if high else ("caution" if caution else "low")
+    return {
+        "valid": True,
+        "email": email,
+        "domain": domain,
+        "free_provider": is_free,
+        "domain_age_days": age.get("age_days") if age.get("checked") else None,
+        "risk": risk,
+        "reasons": high + caution,
+        "tips": tips,
+        "sources_checked": ["Built-in email analysis"]
+            + (["Website age (RDAP)"] if age.get("checked") else [])
+            + (["Public DNS"] if mail.get("checked") else []),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Full investigation: pull every clue out of a message (phone numbers, links,
+# email addresses, crypto wallets, payment names) and run each one through the
+# matching check. Used by the app's "Investigate a Message" section and by the
+# email forwarding inbox (inbox_worker.py).
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_EMAIL_RE = _re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_URL_RE = _re.compile(
+    r"(?:https?://[^\s<>\"')\]]+)"
+    r"|(?:\bwww\.[^\s<>\"')\]]+)"
+    r"|(?:\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:com|net|org|info|biz|us|co|io|xyz|top|click|link|online|site|shop|store|live|app|vip|icu|cyou|sbs|support|help|me|cc|ly|gl|gd|to)\b(?:/[^\s<>\"')\]]*)?)",
+    _re.I,
+)
+_ETH_RE = _re.compile(r"\b0x[a-fA-F0-9]{40}\b")
+_BTC_RE = _re.compile(r"\b(?:bc1[a-z0-9]{25,62}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b")
+_TRON_RE = _re.compile(r"\bT[1-9A-HJ-NP-Za-km-z]{33}\b")
+_CASHTAG_RE = _re.compile(r"(?<![\w$])\$[A-Za-z][A-Za-z0-9_]{1,19}\b")
+_PAY_APPS = {
+    "zelle": "Zelle", "cash app": "Cash App", "cashapp": "Cash App", "venmo": "Venmo",
+    "paypal friends": "PayPal Friends & Family", "western union": "Western Union",
+    "moneygram": "MoneyGram", "wire transfer": "Wire transfer", "bitcoin atm": "Bitcoin ATM",
+    "gift card": "Gift cards", "apple pay": "Apple Pay", "crypto": "Crypto",
+}
+
+
+def extract_clues(text: str, sender: str = "") -> dict:
+    text = text or ""
+    emails = []
+    for e in _EMAIL_RE.findall(text):
+        e = e.strip(".").lower()
+        if e not in emails:
+            emails.append(e)
+
+    # Links, skipping the domain part of email addresses
+    no_emails = _EMAIL_RE.sub(" ", text)
+    links = []
+    for m in _URL_RE.findall(no_emails):
+        u = m.rstrip(".,;:!?")
+        if len(u) < 5 or u.lower() in (l.lower() for l in links):
+            continue
+        links.append(u)
+
+    phones = []
+    try:
+        import phonenumbers
+        for match in phonenumbers.PhoneNumberMatcher(text, "US"):
+            f = phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.E164)
+            if f not in phones:
+                phones.append(f)
+    except ImportError:
+        pass
+
+    wallets = []
+    for chain, rx in (("ethereum", _ETH_RE), ("bitcoin", _BTC_RE), ("tron", _TRON_RE)):
+        for w in rx.findall(text):
+            if w not in (x["address"] for x in wallets):
+                wallets.append({"address": w, "chain": chain})
+
+    lowered = text.lower()
+    cashtags = sorted(set(_CASHTAG_RE.findall(text)))
+    pay_methods = sorted({label for k, label in _PAY_APPS.items() if k in lowered})
+    brands = sorted({b for b in BRAND_NAMES if _re.search(rf"\b{b}\b", lowered)})
+
+    sender = (sender or "").strip()
+    if sender:
+        if "@" in sender:
+            s = sender.lower().strip("<>")
+            if s in emails:
+                emails.remove(s)
+            emails.insert(0, s)
+        else:
+            try:
+                import phonenumbers
+                n = phonenumbers.parse(sender, "US")
+                f = phonenumbers.format_number(n, phonenumbers.PhoneNumberFormat.E164)
+                if f in phones:
+                    phones.remove(f)
+                phones.insert(0, f)
+            except Exception:
+                pass
+
+    return {
+        "phones": phones[:5], "links": links[:5], "emails": emails[:5], "wallets": wallets[:3],
+        "cashtags": cashtags[:5], "payment_methods": pay_methods, "brands_mentioned": brands,
+    }
+
+
+def _verdict(level: str) -> str:
+    return "high" if level == "high" else ("low" if level == "low" else "caution")
+
+
+async def investigate_text(text: str, sender: str = "") -> dict:
+    import asyncio
+
+    text = (text or "")[:8000]
+    clues = extract_clues(text, sender)
+    analysis = analyze_text(text)
+    findings = []
+
+    findings.append({
+        "type": "Message",
+        "subject": " ".join(text.split())[:140] + ("…" if len(text) > 140 else ""),
+        "verdict": _verdict(analysis.get("risk_level", "low")),
+        "reasons": analysis.get("flags", []),
+        "details": "",
+    })
+
+    async def link_job(u):
+        # Links written without http(s):// are checked as https, so they aren't
+        # wrongly flagged as unencrypted.
+        r = await check_urls(URLCheckRequest(urls=[u if "://" in u else "https://" + u]))
+        flagged = bool(r.get("flagged_urls"))
+        d = r.get("details", {})
+        reasons = list(d.get("heuristics", {}).get("reasons", []))
+        age = d.get("domain_age", {})
+        if age.get("is_new_domain"):
+            reasons.append(f"Website was registered only {age.get('age_days')} days ago.")
+        if d.get("urlhaus", {}).get("in_database"):
+            reasons.append("This link is on the URLhaus list of known malicious links.")
+        host = d.get("hosting", {})
+        return {"type": "Link", "subject": u, "verdict": "high" if flagged else "low", "reasons": reasons,
+                "details": f"Hosted in {host.get('country')}" if host.get("checked") else ""}
+
+    async def email_job(e):
+        r = await check_email(EmailCheckRequest(email=e))
+        return {"type": "Email address", "subject": e, "verdict": r.get("risk", "caution"),
+                "reasons": r.get("reasons", []), "details": "Sender" if sender and e == sender.lower().strip("<>") else ""}
+
+    async def wallet_job(w):
+        r = await check_crypto_address(CryptoCheckRequest(address=w["address"], chain=w["chain"]))
+        reasons = [x for x in [r.get("category") and f"Category: {r['category']}", r.get("label") and f"Known as: {r['label']}", r.get("message") or r.get("error")] if x]
+        reasons.insert(0, "Anyone asking you to send crypto to a wallet is a major red flag.")
+        lvl = r.get("risk_level", "unknown")
+        return {"type": "Crypto wallet", "subject": w["address"], "verdict": "high" if lvl in ("high", "medium") else "caution",
+                "reasons": reasons, "details": w["chain"]}
+
+    for p in clues["phones"]:
+        r = analyze_phone(p)
+        findings.append({"type": "Phone number", "subject": r.get("formatted", p), "verdict": r.get("risk", "caution"),
+                         "reasons": r.get("reasons", []),
+                         "details": " · ".join(x for x in [r.get("country"), r.get("location"), r.get("line_type") if r.get("line_type") != "Unknown" else ""] if x)})
+
+    jobs = [link_job(u) for u in clues["links"][:3]] + [email_job(e) for e in clues["emails"][:3]] + [wallet_job(w) for w in clues["wallets"][:2]]
+    for res in await asyncio.gather(*jobs, return_exceptions=True):
+        if isinstance(res, dict):
+            findings.append(res)
+
+    if clues["payment_methods"] or clues["cashtags"]:
+        findings.append({
+            "type": "Payment request",
+            "subject": ", ".join(clues["payment_methods"] + clues["cashtags"]),
+            "verdict": "high" if any(m in clues["payment_methods"] for m in ("Gift cards", "Bitcoin ATM", "Wire transfer", "Western Union", "MoneyGram", "Crypto")) else "caution",
+            "reasons": ["Scammers ask for payments that can't be reversed. Real companies and agencies don't take gift cards, crypto or wire transfers for bills or fines."],
+            "details": "Save these payment names. They help the police trace the scammer.",
+        })
+
+    high = [f for f in findings if f["verdict"] == "high"]
+    caution = [f for f in findings if f["verdict"] == "caution"]
+    if high:
+        verdict = "high"
+        summary = f"{len(high)} of {len(findings)} clues show warning signs. This looks like a scam. Don't reply, click, call back or pay."
+    elif caution:
+        verdict = "caution"
+        summary = f"{len(caution)} of {len(findings)} clues need a closer look. Verify through the company's official website or phone number before you trust it."
+    else:
+        verdict = "low"
+        summary = f"None of the {len(findings)} clues showed warning signs. Stay careful: new scams aren't on any list yet."
+
+    return {"verdict": verdict, "summary": summary, "clues": clues, "findings": findings}
+
+
+@app.post("/api/investigate")
+async def investigate(payload: InvestigateRequest):
+    return await investigate_text(payload.text, payload.sender[:200])
