@@ -10,6 +10,7 @@ import TaskScamCheck from "./components/TaskScamCheck";
 import DetectiveReport from "./components/DetectiveReport";
 import Account from "./components/Account";
 import OperationsPanel from "./components/OperationsPanel";
+import CommunityRoom from "./components/CommunityRoom";
 import CryptoCheck from "./components/CryptoCheck";
 import IC3Report from "./components/IC3Report";
 import PricingPlans from "./components/PricingPlans";
@@ -56,6 +57,7 @@ function App() {
       <DetectiveReport />
       <OperationsPanel />
       <IC3Report />
+      <CommunityRoom />
       <PricingPlans />
     </main>
   );
