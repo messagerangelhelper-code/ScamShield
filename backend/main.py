@@ -424,7 +424,8 @@ async def health_sources():
                 d = resp.json()
                 d = d[0] if isinstance(d, list) and d else d
                 return {"name": "Shared scam list (Supabase)", "status": "OK",
-                        "detail": f"{(d or {}).get('indicators', 0)} clues from {(d or {}).get('reporters', 0)} reporters"}
+                        "detail": f"{(d or {}).get('indicators', 0)} clues from {(d or {}).get('reporters', 0)} reporters"
+                                  + (f", {(d or {}).get('operations')} operations" if (d or {}).get('operations') is not None else "")}
             if resp.status_code in (401, 403):
                 return {"name": "Shared scam list (Supabase)", "status": "NEEDS KEY", "detail": "Supabase refused the service key."}
             return {"name": "Shared scam list (Supabase)", "status": "FAILED",
@@ -1542,7 +1543,13 @@ async def network_match(kind: str, value: str):
                 who = "1 person" if n == 1 else f"{n} people"
                 reason = f"Reported as a scam by {who} on our shared scam list" + (f" since {since}" if since else "") + \
                          (f" ({', '.join(cats[:2]).lower()})" if cats else "") + "."
-                hit = {"reporters": n, "first_seen": r.get("first_seen"), "categories": cats, "reason": reason}
+                op = r.get("operation") or None
+                strength = n
+                if op and int(op.get("clues", 0)) > 1:
+                    reason += " " + describe_operation(op)
+                    strength = max(n, int(op.get("reporters", 0)))
+                hit = {"reporters": strength, "own_reporters": n, "first_seen": r.get("first_seen"),
+                       "categories": cats, "operation": op, "reason": reason}
     except Exception:
         hit = None
     _match_cache[norm] = (time.time(), hit)
@@ -1650,3 +1657,57 @@ async def network_stats():
         return {"enabled": True, **(data or {})}
     except Exception:
         return {"enabled": True}
+
+
+# ---------------------------------------------------------------------------
+# Connection engine: clues reported together are linked into "operations"
+# (see supabase_engine.sql). These helpers describe them in plain English.
+# ---------------------------------------------------------------------------
+
+_KIND_WORDS = {
+    "phone": ("phone number", "phone numbers"), "domain": ("website", "websites"), "url": ("link", "links"),
+    "email": ("email address", "email addresses"), "wallet": ("crypto wallet", "crypto wallets"),
+    "telegram": ("Telegram account", "Telegram accounts"), "cashtag": ("Cash App name", "Cash App names"),
+}
+
+
+def describe_operation(op: dict) -> str:
+    parts = []
+    for kind in ("domain", "url", "phone", "email", "wallet", "telegram", "cashtag"):
+        n = int((op.get("by_kind") or {}).get(kind, 0))
+        if n:
+            one, many = _KIND_WORDS[kind]
+            parts.append(f"{n} {one if n == 1 else many}")
+    if not parts:
+        listed = "other clues"
+    elif len(parts) == 1:
+        listed = parts[0]
+    else:
+        listed = ", ".join(parts[:-1]) + " and " + parts[-1]
+    people = int(op.get("reporters", 0))
+    states = int(op.get("states", 0))
+    who = "1 person" if people == 1 else f"{people} people"
+    where = f" in {states} states" if states > 1 else ""
+    return f"It's linked to scam operation #{op.get('operation_id')}: {listed}, reported by {who}{where}."
+
+
+ADMIN_EMAILS = {e.strip().lower() for e in (os.getenv("NETWORK_ADMIN_EMAILS") or "cashcowaiadmin@gmail.com").split(",") if e.strip()}
+
+
+@app.get("/api/network/operations")
+async def network_operations(authorization: str = Header(default=""), limit: int = 20):
+    """The biggest scam operations found so far. Owner accounts only
+    (NETWORK_ADMIN_EMAILS on Render, comma-separated)."""
+    if not network_enabled():
+        raise HTTPException(status_code=503, detail="The network isn't switched on yet.")
+    user = await _user_from_token(authorization)
+    if (user.get("email") or "").lower() not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="Owner accounts only.")
+    resp = await _rpc("top_operations", {"p_limit": max(1, min(limit, 100))}, timeout=10)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="Couldn't load operations. Was supabase_engine.sql run?")
+    ops = resp.json() or []
+    for op in ops:
+        op["summary"] = describe_operation(op).replace("It's linked to scam operation", "Operation")
+        op["categories"] = [NETWORK_CATEGORIES.get(c, c) for c in (op.get("categories") or [])]
+    return {"operations": ops}
