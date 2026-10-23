@@ -374,3 +374,25 @@ button:hover {
 .op-kind { color: #9aa5b8; font-weight: 700; }
 .op-count { color: #9aa5b8; }
 .op-card button { align-self: flex-start; }
+
+/* --- Layout fixes for the older sections (phone-friendly, one column) --- */
+.link-check form, .crypto-check form, .scam-check form, .senior-mode-panel form, .ic3-report form { display: flex; flex-direction: column; gap: 10px; }
+.link-check input, .link-check textarea, .link-check select,
+.crypto-check input, .crypto-check select, .scam-check textarea,
+.senior-mode-panel form input, .ic3-report input, .ic3-report textarea { width: 100%; box-sizing: border-box; font: inherit; }
+.link-check form button, .crypto-check form button, .scam-check form button, .senior-mode-panel form button { align-self: flex-start; }
+.ic3-report label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: #ffffff; font-size: 14px; }
+.ic3-report .voice-button, .link-check .voice-button, .investigate-check .voice-button { align-self: flex-start; }
+.ic3-report .fill-btn { align-self: flex-start; margin: 4px 0; }
+.ic3-report { display: flex; flex-direction: column; gap: 8px; }
+.toggle-row { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; min-height: 44px; }
+.toggle-row input { width: 22px; height: 22px; flex: none; accent-color: #b31942; }
+.call-trusted-button { margin-top: 10px; }
+.stat-card { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.stat-number { display: block; font-size: 30px; font-weight: 800; color: #ffffff; line-height: 1.1; }
+.button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.senior-warning { margin-top: 12px; padding: 14px 16px; border: 2px solid #f2b33d; border-radius: 12px; background: #2a2414; }
+.senior-warning p { margin: 0; line-height: 1.5; }
+input[type="file"] { width: 100%; box-sizing: border-box; font: inherit; color: #c4cddc; }
+input[type="file"]::file-selector-button { background: #b31942; color: #ffffff; border: none; border-radius: 8px; padding: 10px 14px; margin-right: 12px; font: inherit; font-weight: 600; cursor: pointer; }
+.plan-card ul { padding-left: 20px; line-height: 1.5; }

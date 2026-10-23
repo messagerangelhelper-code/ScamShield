@@ -1,5 +1,4 @@
 import Dashboard from "./components/Dashboard";
-import ScamCheck from "./components/ScamCheck";
 import InvestigateMessage from "./components/InvestigateMessage";
 import LinkCheck from "./components/LinkCheck";
 import QRCheck from "./components/QRCheck";
@@ -33,14 +32,13 @@ function App() {
           <USAFlagIcon />
         </div>
         <p>
-          AI-powered scam detection, evidence collection,
-          and fraud reporting assistance.
+          Check messages, links, phone numbers and more before you trust a
+          stranger, then save the evidence and report it.
         </p>
       </header>
 
       <SeniorMode />
       <Dashboard />
-      <ScamCheck />
       <InvestigateMessage />
       <LinkCheck />
       <QRCheck />
