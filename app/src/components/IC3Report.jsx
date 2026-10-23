@@ -1,5 +1,10 @@
 import { useState } from "react";
 import VoiceInput from "./VoiceInput";
+import { useCaseFile } from "../utils/caseFile";
+
+// Scammer clue types that belong in the "contact info" box.
+const CLUE_TYPES = ["Phone number", "Email sender", "Email address", "Link", "QR code link", "Work platform link",
+  "Crypto wallet", "Telegram account", "WhatsApp chat link", "WhatsApp group invite", "Telegram group invite"];
 
 const initialState = {
   dateOccurred: "",
@@ -12,6 +17,20 @@ const initialState = {
 
 function IC3Report() {
   const [form, setForm] = useState(initialState);
+  const caseData = useCaseFile();
+  const [filled, setFilled] = useState("");
+
+  function fillFromReport() {
+    const clues = [...new Set(caseData.items
+      .filter((i) => i.verdict !== "low" && CLUE_TYPES.includes(i.type))
+      .map((i) => `${i.type}: ${i.subject}`))];
+    setForm((f) => ({
+      ...f,
+      scammerContact: clues.join("; ") || f.scammerContact,
+      description: f.description || (caseData.title ? `${caseData.title}. ` : ""),
+    }));
+    setFilled(clues.length ? `Added ${clues.length} scammer detail${clues.length === 1 ? "" : "s"} from your Detective Report.` : "Your Detective Report doesn't have any flagged phone numbers, links, emails or wallets yet.");
+  }
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -53,10 +72,14 @@ the official IC3 complaint form at https://www.ic3.gov/Home/FileComplaint
     <section className="ic3-report">
       <h2>Report to Law Enforcement</h2>
       <p className="subtext">
-        There's no direct FBI submission API — no such thing exists publicly.
-        This organizes your evidence into a clean summary so filing the real
-        report at IC3.gov takes minutes, not hours.
+        Lost money or personal details to a scam? Report it to the FBI's Internet Crime Complaint Center
+        (IC3). We can't file it for you, but this puts your details in order so filing at IC3.gov takes
+        minutes. You'll copy them into the official form.
       </p>
+      {caseData.items.length > 0 && (
+        <button type="button" className="fill-btn" onClick={fillFromReport}>Fill in from my Detective Report</button>
+      )}
+      {filled && <p className="subtext" role="status">{filled}</p>}
 
       <form onSubmit={(e) => e.preventDefault()}>
         <label>
@@ -104,9 +127,9 @@ the official IC3 complaint form at https://www.ic3.gov/Home/FileComplaint
 
         <label>
           Scammer's contact info
-          <input
-            type="text"
+          <textarea
             name="scammerContact"
+            rows={3}
             placeholder="Username, phone, email, wallet address..."
             value={form.scammerContact}
             onChange={handleChange}

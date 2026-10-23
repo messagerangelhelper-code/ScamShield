@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { addEvidence } from "../utils/caseFile";
-import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
+import { canRunCheck, recordCheck, checksLeftText } from "../utils/usageTracker";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -67,7 +67,7 @@ function CryptoCheck() {
         Always check the destination wallet — especially if someone is
         "helping" you send or cash out funds.
       </p>
-      <p className="subtext">{remainingChecks()} free checks remaining</p>
+      <p className="subtext">{checksLeftText()}</p>
 
       <form onSubmit={handleCheck}>
         <select value={chain} onChange={(e) => setChain(e.target.value)}>

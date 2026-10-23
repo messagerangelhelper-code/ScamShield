@@ -1,20 +1,18 @@
 import { useState, useEffect } from "react";
 import FreezeCredit from "./FreezeCredit";
+import { getStats } from "../utils/usageTracker";
 
 function Dashboard() {
-  const [stats, setStats] = useState({
-    checksRun: 0,
-    scamsFlagged: 0,
-  });
+  const [stats, setStats] = useState(getStats);
 
   useEffect(() => {
-    // Reads from localStorage for now — swap for a real API call
-    // once the backend has a /api/stats endpoint.
-    const saved = JSON.parse(localStorage.getItem("scamshield_stats")) || {
-      checksRun: 0,
-      scamsFlagged: 0,
+    const update = () => setStats(getStats());
+    window.addEventListener("stats-change", update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener("stats-change", update);
+      window.removeEventListener("storage", update);
     };
-    setStats(saved);
   }, []);
 
   return (
@@ -23,11 +21,11 @@ function Dashboard() {
       <div className="stats-row">
         <div className="stat-card">
           <span className="stat-number">{stats.checksRun}</span>
-          <span className="stat-label">Checks Run</span>
+          <span className="stat-label">Checks run</span>
         </div>
         <div className="stat-card">
           <span className="stat-number">{stats.scamsFlagged}</span>
-          <span className="stat-label">Scams Flagged</span>
+          <span className="stat-label">Warnings found</span>
         </div>
       </div>
 

@@ -34,7 +34,9 @@ function PricingPlans() {
           <p className="price">$0</p>
           <ul>
             <li>3 checks every month</li>
-            <li>Basic red-flag scoring</li>
+            <li>Every guide and checklist</li>
+            <li>Detective Report with PDF</li>
+            <li>Shared scam list warnings</li>
           </ul>
         </div>
 
@@ -43,10 +45,9 @@ function PricingPlans() {
           <p className="price">$29<span>/mo</span></p>
           <p className="subtext">or $249/year</p>
           <ul>
-            <li>Unlimited scam, link & crypto checks</li>
-            <li>IC3 report builder</li>
-            <li>Senior protection mode</li>
-            <li>Priority updates to the scam pattern database</li>
+            <li>Everything in Free</li>
+            <li>Unlimited checks in every tool: messages, screenshots, links, QR codes, phone numbers, emails and crypto wallets</li>
+            <li>Investigate as many cases as you need</li>
           </ul>
           <a href={CASHCOW_URL}>
             <button type="button">Get Premium</button>

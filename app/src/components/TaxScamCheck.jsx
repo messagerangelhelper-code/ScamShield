@@ -3,10 +3,9 @@ function TaxScamCheck() {
     <section className="tax-scam-check">
       <h2>Verify an IRS Contact</h2>
       <p className="subtext">
-        The IRS's own 2026 "Dirty Dozen" scam list specifically warns about
-        AI-generated voice calls impersonating the IRS, with spoofed caller
-        ID. Before responding to any "IRS" contact, check it against these
-        real warning signs.
+        Scammers pretend to be the IRS by phone, text and email, sometimes with
+        fake caller ID or computer-generated voices. Before responding to any
+        "IRS" contact, check it against these warning signs.
       </p>
 
       <ul className="insurance-red-flags">

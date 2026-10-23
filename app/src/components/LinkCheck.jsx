@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { addEvidence } from "../utils/caseFile";
-import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
+import { canRunCheck, recordCheck, checksLeftText } from "../utils/usageTracker";
 import VoiceInput from "./VoiceInput";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -67,7 +67,7 @@ function LinkCheck() {
         Paste a suspicious link before clicking it — we check the link's
         warning signs, how new the website is, and known scam lists.
       </p>
-      <p className="subtext">{remainingChecks()} free checks remaining</p>
+      <p className="subtext">{checksLeftText()}</p>
 
       <form onSubmit={handleCheck}>
         <VoiceInput onResult={(text) => setUrl((prev) => prev + text)} />

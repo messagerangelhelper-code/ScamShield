@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { addEvidence } from "../utils/caseFile";
 import jsQR from "jsqr";
-import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
+import { canRunCheck, recordCheck, checksLeftText } from "../utils/usageTracker";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const MAX_SIDE = 1600; // shrink big photos so decoding stays fast on phones
@@ -129,7 +129,7 @@ function QRCheck() {
         reads the code on your device and checks where it really goes —
         before you open it.
       </p>
-      <p className="subtext">{remainingChecks()} free checks remaining</p>
+      <p className="subtext">{checksLeftText()}</p>
 
       <div className="button-row">
         <button type="button" onClick={() => pickerRef.current && pickerRef.current.click()} disabled={loading}>

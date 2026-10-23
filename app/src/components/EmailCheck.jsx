@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { addEvidence } from "../utils/caseFile";
-import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
+import { canRunCheck, recordCheck, checksLeftText } from "../utils/usageTracker";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -64,7 +64,7 @@ function EmailCheck() {
         The name on an email can say anything. Paste the sender's actual address, the part with
         the @, and we'll check if it's free, throwaway, brand-new or pretending to be a company.
       </p>
-      <p className="subtext">{remainingChecks()} free checks remaining</p>
+      <p className="subtext">{checksLeftText()}</p>
 
       <form onSubmit={handleCheck}>
         <label className="field-label" htmlFor="email-address">Sender's email address</label>

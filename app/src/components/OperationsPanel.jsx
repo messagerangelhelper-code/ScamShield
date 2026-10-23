@@ -79,8 +79,8 @@ function OperationsPanel() {
                 <strong>Operation #{op.operation_id}</strong>
                 <span>{(op.categories || []).join(", ")}</span>
               </div>
-              <p>{op.summary}</p>
-              <p className="subtext">First seen {day(op.first_seen)} · Last seen {day(op.last_seen)} · {op.reports} reports</p>
+              <p>{(op.summary || "").replace(/^Operation #\d+:\s*/, "").replace(/^./, (c) => c.toUpperCase())}</p>
+              <p className="subtext">First seen {day(op.first_seen)} · Last seen {day(op.last_seen)} · {op.reports} report{op.reports === 1 ? "" : "s"}</p>
               <details>
                 <summary>Linked clues ({(op.members || []).length})</summary>
                 <ul>

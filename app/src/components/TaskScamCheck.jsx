@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
+import { canRunCheck, recordCheck, checksLeftText } from "../utils/usageTracker";
 import { addEvidence } from "../utils/caseFile";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -164,7 +164,7 @@ function TaskScamCheck() {
           onChange={(e) => setLink(e.target.value)}
         />
         <button type="submit" disabled={loading}>{loading ? "Checking..." : "Check website"}</button>
-        <p className="subtext">{remainingChecks()} free checks remaining. Don't open the link yourself to check it.</p>
+        <p className="subtext">{checksLeftText()}. Don't open the link yourself to check it.</p>
       </form>
       {error && <p className="error">{error}</p>}
       {linkResult && (

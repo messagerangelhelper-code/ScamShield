@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
+import { canRunCheck, recordCheck, checksLeftText } from "../utils/usageTracker";
 import { addEvidence } from "../utils/caseFile";
 import { readScreenshot } from "../utils/readScreenshot";
+import VoiceInput from "./VoiceInput";
+import { isSeniorMode } from "./SeniorMode";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -83,7 +85,7 @@ function InvestigateMessage() {
         Telegram chats too. We pull out every phone number, link, email address, crypto wallet,
         group invite and payment name in it, and check each one. It counts as one check.
       </p>
-      <p className="subtext">{remainingChecks()} free checks remaining</p>
+      <p className="subtext">{checksLeftText()}</p>
 
       <form onSubmit={handleInvestigate}>
         <label className={reading ? "shot-btn disabled" : "shot-btn"}>
@@ -93,6 +95,7 @@ function InvestigateMessage() {
         <p className="subtext">The screenshot stays on your phone. We only read the words in it.</p>
         {reading && <p className="subtext reading" role="status">{reading}</p>}
         <label className="field-label" htmlFor="inv-text">The message</label>
+        <VoiceInput onResult={(t) => setText((prev) => prev + t)} />
         <textarea
           id="inv-text"
           rows={6}
@@ -143,6 +146,15 @@ function InvestigateMessage() {
             ))}
           </ol>
           <p className="subtext">All of this was saved to your Detective Report below.</p>
+          {result.verdict === "high" && isSeniorMode() && (
+            <div className="senior-warning">
+              <p>
+                <strong>This looks like a scam.</strong> Before you do anything else (send money, share a code
+                or reply), call your trusted contact using the button in the "Simple Mode &amp; Trusted
+                Contact" section at the top. It's okay to wait and check with someone first.
+              </p>
+            </div>
+          )}
         </>
       )}
     </section>

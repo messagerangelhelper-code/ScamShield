@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { addEvidence } from "../utils/caseFile";
-import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
+import { canRunCheck, recordCheck, checksLeftText } from "../utils/usageTracker";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -64,7 +64,7 @@ function PhoneCheck() {
         Got a call or text from a number you don't know? Check where it's really from and what kind
         of line it is before you call back or answer their questions.
       </p>
-      <p className="subtext">{remainingChecks()} free checks remaining</p>
+      <p className="subtext">{checksLeftText()}</p>
 
       <form onSubmit={handleCheck}>
         <label className="field-label" htmlFor="phone-number">Phone number</label>

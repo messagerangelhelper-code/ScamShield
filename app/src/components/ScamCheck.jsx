@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { addEvidence } from "../utils/caseFile";
-import { canRunCheck, recordCheck, remainingChecks } from "../utils/usageTracker";
+import { canRunCheck, recordCheck, checksLeftText } from "../utils/usageTracker";
 import { isSeniorMode } from "./SeniorMode";
 import DecoyCard from "./DecoyCard";
 import VoiceInput from "./VoiceInput";
@@ -95,7 +95,7 @@ function ScamCheck() {
   return (
     <section className="scam-check">
       <h2>Check a Message or Listing</h2>
-      <p className="subtext">{remainingChecks()} free checks remaining</p>
+      <p className="subtext">{checksLeftText()}</p>
       <form onSubmit={handleCheck}>
         <VoiceInput onResult={(text) => setInput((prev) => prev + text)} />
         <textarea
