@@ -1711,3 +1711,257 @@ async def network_operations(authorization: str = Header(default=""), limit: int
         op["summary"] = describe_operation(op).replace("It's linked to scam operation", "Operation")
         op["categories"] = [NETWORK_CATEGORIES.get(c, c) for c in (op.get("categories") or [])]
     return {"operations": ops}
+
+
+# ---------------------------------------------------------------------------
+# Community room: members-only posts and replies (see supabase_community.sql).
+# Guardrails: sign-in required, display names only (never emails), links are
+# made unclickable, card and Social Security numbers are refused, posts that
+# look like "fund recovery" or move-to-WhatsApp pitches wait for the team,
+# three flags hide a post, daily posting limits, and owner moderation.
+# ---------------------------------------------------------------------------
+
+COMMUNITY_TOPICS = {"tips": "Tips", "spotted": "Scam I spotted", "question": "Question", "feedback": "App feedback"}
+_RESERVED_NAME_WORDS = ("scamshield", "scamguard", "cashcow", "admin", "moderator", "support", "official")
+_NAME_RE = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{1,22}[A-Za-z0-9]$")
+_URL_RE = _re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"']+|\b(?:[a-z0-9-]+\.)+[a-z]{2,24}(?:/[^\s<>\"']*)?")
+_SSN_RE = _re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+_CARD_RE = _re.compile(r"\b(?:\d[ -]?){13,19}\b")
+_HOLD_RE = _re.compile(
+    r"(?i)(recover(?:y)?\s+(?:your|my|the|lost|stolen)?\s*(?:money|funds|crypto|bitcoin|assets)|fund[s]?\s+recovery|"
+    r"recovery\s+(?:expert|agent|service|company|specialist|hacker)|(?:hire|contact)\s+(?:a|this|the)?\s*hacker|"
+    r"(?:dm|text|message|whatsapp|telegram)\s+me\b|(?:contact|reach)\s+(?:him|her|them|me)\s+(?:on|via|through)\s+(?:whatsapp|telegram|signal)|"
+    r"wa\.me/|t\.me/|guaranteed\s+(?:profit|returns?|income)|investment\s+(?:mentor|manager|opportunity))")
+
+
+def _luhn_ok(digits: str) -> bool:
+    total, alt = 0, False
+    for ch in reversed(digits):
+        d = int(ch)
+        if alt:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+        alt = not alt
+    return total % 10 == 0
+
+
+def community_check_text(text: str) -> tuple[str, bool]:
+    """Cleans a post or reply. Returns (safe_text, hold_for_review).
+    Raises HTTPException when it contains a card or Social Security number."""
+    t = (text or "").replace("\r\n", "\n").strip()
+    t = _re.sub(r"\n{3,}", "\n\n", t)
+    if _SSN_RE.search(t):
+        raise HTTPException(status_code=400, detail="That looks like a Social Security number. Please remove it before posting. Never share it here.")
+    for m in _CARD_RE.finditer(t):
+        digits = _re.sub(r"\D", "", m.group(0))
+        if 13 <= len(digits) <= 19 and _luhn_ok(digits):
+            raise HTTPException(status_code=400, detail="That looks like a card number. Please remove it before posting. Never share it here.")
+    hold = bool(_HOLD_RE.search(t))
+
+    def defang(m):
+        s = _re.sub(r"(?i)^http", "hxxp", m.group(0))
+        if "://" in s:
+            scheme, rest = s.split("://", 1)
+            host, slash, path = rest.partition("/")
+            return f"{scheme}://{host.replace('.', '[.]')}{slash}{path}"
+        host, slash, path = s.partition("/")
+        return host.replace(".", "[.]") + slash + path
+
+    return _URL_RE.sub(defang, t), hold
+
+
+def _community_on():
+    if not network_enabled():
+        raise HTTPException(status_code=503, detail="The community isn't switched on yet.")
+
+
+def _is_admin(user: dict) -> bool:
+    return (user.get("email") or "").lower() in ADMIN_EMAILS
+
+
+def _community_error(resp, default: str):
+    text = resp.text or ""
+    for key, status, msg in (
+        ("name_taken", 409, "That name is taken. Please pick another one."),
+        ("not_member", 403, "Pick a display name to join the community first."),
+        ("banned", 403, "Your account can't post in the community."),
+        ("rate_limited", 429, "You've posted a lot today. Please try again tomorrow."),
+        ("not_found", 404, "That post isn't available any more."),
+    ):
+        if key in text:
+            raise HTTPException(status_code=status, detail=msg)
+    raise HTTPException(status_code=502, detail=default)
+
+
+async def _community_rpc(name: str, args: dict, default: str):
+    resp = await _rpc(name, args, timeout=10)
+    if resp.status_code not in (200, 204):
+        _community_error(resp, default)
+    return resp.json() if resp.content else None
+
+
+@app.get("/api/community/me")
+async def community_me(authorization: str = Header(default="")):
+    _community_on()
+    user = await _user_from_token(authorization)
+    member = await _community_rpc("community_me", {"p_user": user["id"]}, "Couldn't open the community. Was supabase_community.sql run?")
+    return {"member": member, "is_owner": _is_admin(user), "topics": COMMUNITY_TOPICS}
+
+
+class CommunityJoin(BaseModel):
+    display_name: str
+
+
+@app.post("/api/community/join")
+async def community_join(payload: CommunityJoin, authorization: str = Header(default="")):
+    _community_on()
+    user = await _user_from_token(authorization)
+    name = _re.sub(r"\s+", " ", payload.display_name or "").strip()
+    if not _NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail="Use 3 to 24 letters or numbers (spaces, dots, dashes and underscores are OK in the middle).")
+    admin = _is_admin(user)
+    squashed = _re.sub(r"[^a-z0-9]", "", name.lower())
+    if not admin and any(w in squashed for w in _RESERVED_NAME_WORDS):
+        raise HTTPException(status_code=400, detail="That name could be mistaken for our team. Please pick another one.")
+    if "@" in name or _re.search(r"\d{7,}", name):
+        raise HTTPException(status_code=400, detail="Don't use your email or phone number as your name.")
+    member = await _community_rpc("community_join", {"p_user": user["id"], "p_name": name, "p_team": admin}, "Couldn't save your name. Please try again.")
+    return {"member": member}
+
+
+@app.get("/api/community/posts")
+async def community_posts(topic: str = "", before: int = 0, authorization: str = Header(default="")):
+    _community_on()
+    user = await _user_from_token(authorization)
+    posts = await _community_rpc("community_list", {
+        "p_viewer": user["id"], "p_admin": _is_admin(user),
+        "p_topic": topic if topic in COMMUNITY_TOPICS else None,
+        "p_before": before if before > 0 else None, "p_limit": 20,
+    }, "Couldn't load posts. Please try again.")
+    return {"posts": posts or [], "more": len(posts or []) == 20}
+
+
+@app.get("/api/community/posts/{post_id}")
+async def community_thread(post_id: int, authorization: str = Header(default="")):
+    _community_on()
+    user = await _user_from_token(authorization)
+    thread = await _community_rpc("community_thread", {"p_viewer": user["id"], "p_admin": _is_admin(user), "p_post": post_id},
+                                  "Couldn't load that post. Please try again.")
+    if not thread:
+        raise HTTPException(status_code=404, detail="That post isn't available any more.")
+    return thread
+
+
+class CommunityPost(BaseModel):
+    topic: str = "tips"
+    title: str
+    body: str
+
+
+HELD_MESSAGE = ("Your post is waiting for a quick review by our team before others can see it. "
+                "We check posts that mention recovering money, hackers, or moving to WhatsApp or Telegram, "
+                "because scammers use those to target people who were already scammed.")
+
+
+@app.post("/api/community/posts")
+async def community_new_post(payload: CommunityPost, authorization: str = Header(default="")):
+    _community_on()
+    user = await _user_from_token(authorization)
+    if payload.topic not in COMMUNITY_TOPICS:
+        raise HTTPException(status_code=400, detail="Pick a topic.")
+    title, hold1 = community_check_text(payload.title)
+    body, hold2 = community_check_text(payload.body)
+    if not 3 <= len(title) <= 120:
+        raise HTTPException(status_code=400, detail="Give your post a title (up to 120 characters).")
+    if not 10 <= len(body) <= 2000:
+        raise HTTPException(status_code=400, detail="Write at least a sentence (up to 2,000 characters).")
+    held = (hold1 or hold2) and not _is_admin(user)
+    pid = await _community_rpc("community_post", {"p_user": user["id"], "p_topic": payload.topic, "p_title": title,
+                                                  "p_body": body, "p_review": held}, "Couldn't post right now. Please try again.")
+    return {"id": pid, "held": held, "message": HELD_MESSAGE if held else "Posted. Thanks for helping the community."}
+
+
+class CommunityReply(BaseModel):
+    body: str
+
+
+@app.post("/api/community/posts/{post_id}/replies")
+async def community_new_reply(post_id: int, payload: CommunityReply, authorization: str = Header(default="")):
+    _community_on()
+    user = await _user_from_token(authorization)
+    body, hold = community_check_text(payload.body)
+    if not 2 <= len(body) <= 1000:
+        raise HTTPException(status_code=400, detail="Replies can be up to 1,000 characters.")
+    held = hold and not _is_admin(user)
+    rid = await _community_rpc("community_reply", {"p_user": user["id"], "p_post": post_id, "p_body": body, "p_review": held},
+                               "Couldn't reply right now. Please try again.")
+    return {"id": rid, "held": held, "message": HELD_MESSAGE.replace("post is", "reply is") if held else "Reply posted."}
+
+
+class CommunityTarget(BaseModel):
+    kind: str
+    id: int
+    value: bool = True
+
+
+def _check_kind(kind: str):
+    if kind not in ("post", "reply"):
+        raise HTTPException(status_code=400, detail="Unknown item.")
+
+
+@app.post("/api/community/flag")
+async def community_flag(payload: CommunityTarget, authorization: str = Header(default="")):
+    _community_on()
+    _check_kind(payload.kind)
+    user = await _user_from_token(authorization)
+    await _community_rpc("community_flag", {"p_user": user["id"], "p_kind": payload.kind, "p_id": payload.id},
+                         "Couldn't flag that right now.")
+    return {"message": "Thanks. Our team will take a look."}
+
+
+@app.post("/api/community/delete")
+async def community_delete(payload: CommunityTarget, authorization: str = Header(default="")):
+    _community_on()
+    _check_kind(payload.kind)
+    user = await _user_from_token(authorization)
+    ok = await _community_rpc("community_delete", {"p_user": user["id"], "p_admin": _is_admin(user),
+                                                   "p_kind": payload.kind, "p_id": payload.id}, "Couldn't delete that right now.")
+    if not ok:
+        raise HTTPException(status_code=403, detail="You can only delete your own posts.")
+    return {"message": "Deleted."}
+
+
+async def _owner(authorization: str) -> dict:
+    _community_on()
+    user = await _user_from_token(authorization)
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Owner accounts only.")
+    return user
+
+
+@app.post("/api/community/moderate")
+async def community_moderate(payload: CommunityTarget, authorization: str = Header(default="")):
+    """Owner: value=true hides the item, value=false shows it again."""
+    _check_kind(payload.kind)
+    await _owner(authorization)
+    await _community_rpc("community_moderate", {"p_kind": payload.kind, "p_id": payload.id, "p_hidden": payload.value},
+                         "Couldn't update that right now.")
+    return {"message": "Hidden." if payload.value else "Visible again."}
+
+
+@app.post("/api/community/ban")
+async def community_ban(payload: CommunityTarget, authorization: str = Header(default="")):
+    """Owner: stops (value=true) or allows (value=false) the author of a post or reply."""
+    _check_kind(payload.kind)
+    await _owner(authorization)
+    await _community_rpc("community_ban", {"p_kind": payload.kind, "p_id": payload.id, "p_banned": payload.value},
+                         "Couldn't update that member right now.")
+    return {"message": "That member can no longer post, and their posts are hidden." if payload.value else "That member can post again."}
+
+
+@app.get("/api/community/review")
+async def community_review(authorization: str = Header(default="")):
+    await _owner(authorization)
+    return await _community_rpc("community_review_queue", {}, "Couldn't load the review list.")
