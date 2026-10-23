@@ -361,3 +361,16 @@ button:hover {
 .share-panel button { align-self: flex-start; }
 .account-box select, .share-panel select { background: #0d1b3d; color: #f0f0f0; border: 1px solid #1e3358; border-radius: 8px; padding: 10px 12px; font-size: 14px; }
 .detective-report .check-item { background: #12213d; }
+
+/* --- Owner view: scam operations --- */
+.ops-panel { display: flex; flex-direction: column; gap: 10px; }
+.ops-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.op-card { background: #0d1b3d; border: 2px solid #e0446a; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.op-card p { margin: 0; line-height: 1.45; }
+.op-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.op-head span { color: #ff8fa6; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+.op-card summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.op-card ul { margin: 4px 0 0; padding-left: 18px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.op-kind { color: #9aa5b8; font-weight: 700; }
+.op-count { color: #9aa5b8; }
+.op-card button { align-self: flex-start; }

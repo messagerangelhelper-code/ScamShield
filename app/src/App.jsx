@@ -10,6 +10,7 @@ import StrangerCheck from "./components/StrangerCheck";
 import TaskScamCheck from "./components/TaskScamCheck";
 import DetectiveReport from "./components/DetectiveReport";
 import Account from "./components/Account";
+import OperationsPanel from "./components/OperationsPanel";
 import CryptoCheck from "./components/CryptoCheck";
 import IC3Report from "./components/IC3Report";
 import PricingPlans from "./components/PricingPlans";
@@ -55,6 +56,7 @@ function App() {
       <TaxScamCheck />
       <Account />
       <DetectiveReport />
+      <OperationsPanel />
       <IC3Report />
       <PricingPlans />
     </main>
