@@ -380,6 +380,10 @@ button:hover {
 .link-check input, .link-check textarea, .link-check select,
 .crypto-check input, .crypto-check select, .scam-check textarea,
 .senior-mode-panel form input, .ic3-report input, .ic3-report textarea { width: 100%; box-sizing: border-box; font: inherit; }
+/* Checkboxes stay small, not full width */
+.link-check input[type="checkbox"], .link-check input[type="radio"],
+.crypto-check input[type="checkbox"], .senior-mode-panel form input[type="checkbox"],
+.ic3-report input[type="checkbox"] { width: 20px; height: 20px; min-width: 20px; flex: none; padding: 0; margin: 2px 0 0; accent-color: #b31942; }
 .link-check form button, .crypto-check form button, .scam-check form button, .senior-mode-panel form button { align-self: flex-start; }
 .ic3-report label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: #ffffff; font-size: 14px; }
 .ic3-report .voice-button, .link-check .voice-button, .investigate-check .voice-button { align-self: flex-start; }
