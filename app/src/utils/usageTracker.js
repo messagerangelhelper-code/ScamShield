@@ -35,6 +35,7 @@ export function canRunCheck() {
 }
 
 export function recordCheck() {
+  bumpStat("checksRun");
   const stored = getUsage();
   if (!stored.premium) {
     stored.count += 1;
@@ -45,6 +46,36 @@ export function recordCheck() {
     }
   }
   return stored;
+}
+
+// Lifetime totals for the Protection Dashboard (kept separately from the monthly count).
+const STATS_KEY = KEY.replace("_usage", "_stats");
+
+export function getStats() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STATS_KEY)) || {};
+    return { checksRun: s.checksRun || 0, scamsFlagged: s.scamsFlagged || 0 };
+  } catch {
+    return { checksRun: 0, scamsFlagged: 0 };
+  }
+}
+
+export function bumpStat(field) {
+  const s = getStats();
+  s[field] = (s[field] || 0) + 1;
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify(s));
+  } catch {
+    /* ignore */
+  }
+  window.dispatchEvent(new Event("stats-change"));
+}
+
+// "3 free checks remaining", "1 free check remaining", or "Unlimited checks (Premium)".
+export function checksLeftText() {
+  const left = remainingChecks();
+  if (left === Infinity) return "Unlimited checks (Premium)";
+  return `${left} free check${left === 1 ? "" : "s"} remaining this month`;
 }
 
 export function remainingChecks() {

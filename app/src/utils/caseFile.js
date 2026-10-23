@@ -1,6 +1,7 @@
 // The Detective Report's "case file": every check the user runs is saved here
 // on this device, so they can share one summary with family, a bank or police.
 import { useEffect, useState } from "react";
+import { bumpStat } from "./usageTracker";
 
 const KEY = "scamshield_casefile";
 const PREFIX = "SS";
@@ -60,6 +61,7 @@ export function addEvidence({ type, subject, verdict, reasons = [], details = ""
   };
   const cur = opened(memory);
   write({ ...cur, items: [...cur.items, item].slice(-MAX_ITEMS) });
+  if (item.verdict === "high") bumpStat("scamsFlagged");
 }
 
 export function removeEvidence(id) {
