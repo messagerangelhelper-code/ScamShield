@@ -11,7 +11,11 @@ Runs on Render as a Cron Job every few minutes:
 
 Settings (Render > the cron job > Environment), all using a Gmail account you
 own and an app password (no third-party service, nothing else to sign up for):
-    INBOX_EMAIL          the Gmail address people forward to
+    INBOX_EMAIL          the Gmail account to sign in to (e.g. cashcowaiadmin@gmail.com)
+    INBOX_ADDRESS        the address people forward to (default: INBOX_EMAIL with
+                         "+scamcheck", e.g. cashcowaiadmin+scamcheck@gmail.com).
+                         Only emails sent to this address are touched, so the
+                         account's other mail (leads, receipts) is left alone.
     INBOX_APP_PASSWORD   that Gmail account's 16-character app password
     INBOX_BRAND          name used in replies (default "ScamShield")
     INBOX_APP_URL        link to the app in replies (default cashcowai.online)
@@ -36,6 +40,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("inbox")
 
 INBOX_EMAIL = (os.getenv("INBOX_EMAIL") or "").strip()
+
+
+def _default_address(account: str) -> str:
+    user, _, domain = account.partition("@")
+    return f"{user}+scamcheck@{domain}" if user and domain else account
+
+
+INBOX_ADDRESS = ((os.getenv("INBOX_ADDRESS") or "").strip() or _default_address(INBOX_EMAIL)).lower()
 INBOX_APP_PASSWORD = (os.getenv("INBOX_APP_PASSWORD") or "").replace(" ", "").strip()
 BRAND = (os.getenv("INBOX_BRAND") or "ScamShield").strip()
 APP_URL = (os.getenv("INBOX_APP_URL") or "https://cashcowai.online").strip()
@@ -162,6 +174,7 @@ def send_reply(to_addr: str, orig, text: str, subject_prefix: str = "Scam check"
     subject = orig.get("Subject", "") or "your message"
     reply["Subject"] = f"{subject_prefix}: {subject}"[:200]
     reply["From"] = formataddr((BRAND, INBOX_EMAIL))
+    reply["Reply-To"] = INBOX_ADDRESS
     reply["To"] = to_addr
     reply["Message-ID"] = make_msgid()
     reply["Auto-Submitted"] = "auto-replied"
@@ -189,7 +202,7 @@ def should_skip(msg, from_addr: str) -> str:
 def checks_this_month(imap, from_addr: str) -> int:
     since = date.today().replace(day=1).strftime("%d-%b-%Y")
     safe = from_addr.replace('"', "")
-    status, data = imap.search(None, "SEEN", "SINCE", since, "FROM", f'"{safe}"')
+    status, data = imap.search(None, "SEEN", "SINCE", since, "FROM", f'"{safe}"', "TO", f'"{INBOX_ADDRESS}"')
     return len(data[0].split()) if status == "OK" and data and data[0] else 0
 
 
@@ -202,7 +215,9 @@ def process_inbox() -> int:
     try:
         imap.login(INBOX_EMAIL, INBOX_APP_PASSWORD)
         imap.select("INBOX")
-        status, data = imap.search(None, "UNSEEN")
+        # Only new emails sent to the scam-check address. Everything else in the
+        # account (leads, receipts, notifications) is never opened or marked read.
+        status, data = imap.search(None, "UNSEEN", "TO", f'"{INBOX_ADDRESS}"')
         ids = data[0].split()[:MAX_PER_RUN] if status == "OK" and data and data[0] else []
         log.info("New messages: %d", len(ids))
         for mid in ids:
