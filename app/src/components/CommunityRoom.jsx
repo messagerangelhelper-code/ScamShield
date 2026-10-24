@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth, currentToken } from "../utils/auth";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-const BRAND = "ScamShield";
+const BRAND = "ScamGuard Global";
 
 const TOPICS = { tips: "Tips", spotted: "Scam I spotted", question: "Question", feedback: "App feedback" };
 
