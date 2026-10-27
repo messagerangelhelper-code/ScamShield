@@ -19,9 +19,12 @@ app.add_middleware(
         "https://scamshield.global",
         "https://www.scamshield.global",
         "https://scamshield-app-x89o.onrender.com",
+        "https://cashcowai.online",          # CashCow site (CashCow Community page)
+        "https://www.cashcowai.online",
     ],
-    # Sister apps hosted on Render: ScamGuard Global and MyBillPilot
-    allow_origin_regex=r"https://(scamguard-global|mybillpilot)[a-z0-9-]*\.onrender\.com",
+    # Sister apps hosted on Render: ScamGuard Global, MyBillPilot, My Health Check Scan,
+    # My Home Kitchen Remedies, and the CashCow site's Render address
+    allow_origin_regex=r"https://(scamguard-global|mybillpilot|my-health-check-scan|my-home-kitchen-remedies|integrity-records-platform)[a-z0-9-]*\.onrender\.com",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1722,6 +1725,17 @@ async def network_operations(authorization: str = Header(default=""), limit: int
 # ---------------------------------------------------------------------------
 
 COMMUNITY_TOPICS = {"tips": "Tips", "spotted": "Scam I spotted", "question": "Question", "feedback": "App feedback"}
+# CashCow Community: one community for every CashCow app, split into channels.
+COMMUNITY_CHANNELS = {
+    "general": "General", "scam": "Scam Watch", "food": "Food & Health",
+    "remedies": "Home Remedies", "money": "Bills & Money", "feedback": "App Feedback",
+}
+# Health channels: posts that promise cures or tell people to stop their medicine
+# wait for the team, the same way "fund recovery" posts do.
+_HEALTH_HOLD_RE = _re.compile(
+    r"(?i)(\bcures?\b|\bcured\b|miracle|reverse[sd]?\s+(?:your|my|the)?\s*(?:diabetes|cancer|disease)|"
+    r"(?:stop|quit|don'?t\s+take|throw\s+away)\s+(?:taking\s+)?(?:your|my|the)?\s*(?:meds|medicine|medication|insulin|pills)|"
+    r"instead\s+of\s+(?:your|the)?\s*(?:doctor|medicine|medication|chemo|insulin))")
 _RESERVED_NAME_WORDS = ("scamshield", "scamguard", "cashcow", "admin", "moderator", "support", "official")
 _NAME_RE = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{1,22}[A-Za-z0-9]$")
 _URL_RE = _re.compile(r"(?i)\b(?:https?://|www\.)[^\s<>\"']+|\b(?:[a-z0-9-]+\.)+[a-z]{2,24}(?:/[^\s<>\"']*)?")
@@ -1807,7 +1821,7 @@ async def community_me(authorization: str = Header(default="")):
     _community_on()
     user = await _user_from_token(authorization)
     member = await _community_rpc("community_me", {"p_user": user["id"]}, "Couldn't open the community. Was supabase_community.sql run?")
-    return {"member": member, "is_owner": _is_admin(user), "topics": COMMUNITY_TOPICS}
+    return {"member": member, "is_owner": _is_admin(user), "topics": COMMUNITY_TOPICS, "channels": COMMUNITY_CHANNELS}
 
 
 class CommunityJoin(BaseModel):
@@ -1832,11 +1846,12 @@ async def community_join(payload: CommunityJoin, authorization: str = Header(def
 
 
 @app.get("/api/community/posts")
-async def community_posts(topic: str = "", before: int = 0, authorization: str = Header(default="")):
+async def community_posts(topic: str = "", before: int = 0, channel: str = "", authorization: str = Header(default="")):
     _community_on()
     user = await _user_from_token(authorization)
     posts = await _community_rpc("community_list", {
         "p_viewer": user["id"], "p_admin": _is_admin(user),
+        "p_channel": channel if channel in COMMUNITY_CHANNELS else None,
         "p_topic": topic if topic in COMMUNITY_TOPICS else None,
         "p_before": before if before > 0 else None, "p_limit": 20,
     }, "Couldn't load posts. Please try again.")
@@ -1855,6 +1870,7 @@ async def community_thread(post_id: int, authorization: str = Header(default="")
 
 
 class CommunityPost(BaseModel):
+    channel: str = "scam"
     topic: str = "tips"
     title: str
     body: str
@@ -1863,6 +1879,9 @@ class CommunityPost(BaseModel):
 HELD_MESSAGE = ("Your post is waiting for a quick review by our team before others can see it. "
                 "We check posts that mention recovering money, hackers, or moving to WhatsApp or Telegram, "
                 "because scammers use those to target people who were already scammed.")
+HEALTH_HELD_MESSAGE = ("Your post is waiting for a quick review by our team before others can see it. "
+                       "We check health posts that mention cures or stopping medicine, so nobody gets "
+                       "advice that could hurt them.")
 
 
 @app.post("/api/community/posts")
@@ -1871,16 +1890,23 @@ async def community_new_post(payload: CommunityPost, authorization: str = Header
     user = await _user_from_token(authorization)
     if payload.topic not in COMMUNITY_TOPICS:
         raise HTTPException(status_code=400, detail="Pick a topic.")
+    if payload.channel not in COMMUNITY_CHANNELS:
+        raise HTTPException(status_code=400, detail="Pick a channel.")
     title, hold1 = community_check_text(payload.title)
     body, hold2 = community_check_text(payload.body)
+    health_hold = payload.channel in ("food", "remedies") and bool(_HEALTH_HOLD_RE.search(f"{payload.title} {payload.body}"))
     if not 3 <= len(title) <= 120:
         raise HTTPException(status_code=400, detail="Give your post a title (up to 120 characters).")
     if not 10 <= len(body) <= 2000:
         raise HTTPException(status_code=400, detail="Write at least a sentence (up to 2,000 characters).")
-    held = (hold1 or hold2) and not _is_admin(user)
-    pid = await _community_rpc("community_post", {"p_user": user["id"], "p_topic": payload.topic, "p_title": title,
-                                                  "p_body": body, "p_review": held}, "Couldn't post right now. Please try again.")
-    return {"id": pid, "held": held, "message": HELD_MESSAGE if held else "Posted. Thanks for helping the community."}
+    held = (hold1 or hold2 or health_hold) and not _is_admin(user)
+    pid = await _community_rpc("community_post", {"p_user": user["id"], "p_channel": payload.channel, "p_topic": payload.topic,
+                                                  "p_title": title, "p_body": body, "p_review": held},
+                               "Couldn't post right now. Please try again.")
+    msg = "Posted. Thanks for helping the community."
+    if held:
+        msg = HEALTH_HELD_MESSAGE if health_hold and not (hold1 or hold2) else HELD_MESSAGE
+    return {"id": pid, "held": held, "message": msg}
 
 
 class CommunityReply(BaseModel):
