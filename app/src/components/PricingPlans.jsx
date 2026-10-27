@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getUsage } from "../utils/usageTracker";
 
 // Payments are handled by the CashCow platform (Stripe checkout).
-const CASHCOW_URL = "https://integrity-records-platform.onrender.com/";
+const CASHCOW_URL = "https://cashcowai.online/#all-access";
 
 function PricingPlans() {
   const [usage, setUsage] = useState(0);
@@ -42,15 +42,15 @@ function PricingPlans() {
 
         <div className="plan-card highlight">
           <h3>Premium</h3>
-          <p className="price">$29<span>/mo</span></p>
-          <p className="subtext">or $249/year</p>
+          <p className="price">Coming soon</p>
+          <p className="subtext">Part of CashCow All Access: one membership for Premium in every CashCow app.</p>
           <ul>
             <li>Everything in Free</li>
             <li>Unlimited checks in every tool: messages, screenshots, links, QR codes, phone numbers, emails and crypto wallets</li>
             <li>Investigate as many cases as you need</li>
           </ul>
           <a href={CASHCOW_URL}>
-            <button type="button">Get Premium</button>
+            <button type="button">Get notified</button>
           </a>
         </div>
       </div>

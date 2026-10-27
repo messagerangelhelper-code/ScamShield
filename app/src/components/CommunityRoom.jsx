@@ -3,6 +3,14 @@ import { useAuth, currentToken } from "../utils/auth";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const BRAND = "ScamShield";
+// CashCow Community: one community shared by every CashCow app, split into channels.
+// This app opens on its own channel.
+const DEFAULT_CHANNEL = "scam";
+const COMMUNITY_URL = "https://cashcowai.online/community.html";
+const CHANNELS = {
+  general: "General", scam: "Scam Watch", food: "Food & Health",
+  remedies: "Home Remedies", money: "Bills & Money", feedback: "App Feedback",
+};
 
 const DRAFT_KEY = `${BRAND.toLowerCase().replace(/\s+/g, "-")}-community-draft`;
 
@@ -10,9 +18,9 @@ const DRAFT_KEY = `${BRAND.toLowerCase().replace(/\s+/g, "-")}-community-draft`;
 function loadDraft() {
   try {
     const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
-    if (d && typeof d.title === "string" && typeof d.body === "string") return { topic: d.topic || "tips", title: d.title, body: d.body };
+    if (d && typeof d.title === "string" && typeof d.body === "string") return { channel: d.channel || DEFAULT_CHANNEL, topic: d.topic || "tips", title: d.title, body: d.body };
   } catch { /* storage not available */ }
-  return { topic: "tips", title: "", body: "" };
+  return { channel: DEFAULT_CHANNEL, topic: "tips", title: "", body: "" };
 }
 function saveDraft(d) {
   try {
@@ -28,6 +36,7 @@ const RULES = [
   "Never post your own card, bank, Social Security or password details.",
   "Never ask anyone to message you on WhatsApp, Telegram or by text.",
   "No offers to \"recover\" money. Real help comes from your bank, the FTC and IC3.gov, and it's free.",
+  "Health posts: share what worked for you, but never promise a cure or tell anyone to stop their medicine.",
   "To warn everyone about a scammer's number, website or wallet, share it from your Detective Report.",
 ];
 
@@ -55,7 +64,7 @@ async function api(path, options = {}) {
 function Author({ name, team }) {
   return (
     <span className="cm-author">
-      {name}{team && <span className="cm-team">{BRAND} team</span>}
+      {name}{team && <span className="cm-team">CashCow team</span>}
     </span>
   );
 }
@@ -75,7 +84,7 @@ function CommunityRoom() {
   const [name, setName] = useState("");
   const [agree, setAgree] = useState(false);
 
-  const [topic, setTopic] = useState("");
+  const [channel, setChannel] = useState(DEFAULT_CHANNEL);
   const [posts, setPosts] = useState([]);
   const [more, setMore] = useState(false);
   const [openId, setOpenId] = useState(null);
@@ -110,7 +119,7 @@ function CommunityRoom() {
   const loadPosts = useCallback(async (append = false, before = 0) => {
     try {
       const q = new URLSearchParams();
-      if (topic) q.set("topic", topic);
+      if (channel) q.set("channel", channel);
       if (before) q.set("before", String(before));
       const d = await api(`/api/community/posts?${q}`);
       setPosts((old) => (append ? [...old, ...d.posts] : d.posts));
@@ -118,7 +127,7 @@ function CommunityRoom() {
     } catch (e) {
       setError(e.message);
     }
-  }, [topic]);
+  }, [channel]);
 
   useEffect(() => {
     if (me) loadPosts();
@@ -165,7 +174,7 @@ function CommunityRoom() {
     if (draft.body.trim().length < 10) return setError("Write a little more in your post (at least 10 characters).");
     return run(async () => {
       const d = await api("/api/community/posts", { method: "POST", body: JSON.stringify(draft) });
-      setDraft({ topic: draft.topic, title: "", body: "" });
+      setDraft({ channel: draft.channel, topic: draft.topic, title: "", body: "" });
       setComposing(false);
       setNote(d.message);
       await loadPosts();
@@ -300,7 +309,7 @@ function CommunityRoom() {
         {!thread ? <p className="subtext">Loading…</p> : (
           <>
             <article className="cm-card cm-main">
-              <div className="cm-meta"><span className="cm-topic">{TOPICS[thread.post.topic]}</span><Status item={thread.post} /></div>
+              <div className="cm-meta"><span className="cm-topic">{CHANNELS[thread.post.channel] || ""} · {TOPICS[thread.post.topic]}</span><Status item={thread.post} /></div>
               <h3>{thread.post.title}</h3>
               <div className="cm-meta"><Author name={thread.post.author} team={thread.post.team} /><span>{ago(thread.post.created_at)}</span></div>
               <p className="cm-body">{thread.post.body}</p>
@@ -331,11 +340,15 @@ function CommunityRoom() {
       <>
         <p className="subtext">Signed in as <strong>{me.display_name}</strong>. Links in posts are shown as plain text so no one can be tricked into tapping them.</p>
         <div className="cm-toolbar">
-          {!composing && <button type="button" onClick={() => { clearMessages(); setComposing(true); }}>New post</button>}
+          {!composing && <button type="button" onClick={() => { clearMessages(); setDraft({ ...draft, channel: channel || draft.channel || DEFAULT_CHANNEL }); setComposing(true); }}>New post</button>}
           {owner && <button type="button" className="link-btn" onClick={openReview}>Review list</button>}
         </div>
         {composing && (
           <form onSubmit={submitPost} className="cm-form cm-card">
+            <label className="field-label" htmlFor="cm-channel">Channel</label>
+            <select id="cm-channel" value={draft.channel || DEFAULT_CHANNEL} onChange={(e) => setDraft({ ...draft, channel: e.target.value })}>
+              {Object.entries(CHANNELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
             <label className="field-label" htmlFor="cm-topic">Topic</label>
             <select id="cm-topic" value={draft.topic} onChange={(e) => setDraft({ ...draft, topic: e.target.value })}>
               {Object.entries(TOPICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -352,10 +365,10 @@ function CommunityRoom() {
             </div>
           </form>
         )}
-        <div className="tab-row cm-tabs" role="group" aria-label="Topics">
-          {[["", "All"], ...Object.entries(TOPICS)].map(([k, v]) => (
-            <button key={k || "all"} type="button" className={topic === k ? "tab-btn active" : "tab-btn"} aria-pressed={topic === k}
-              onClick={() => setTopic(k)}>{v}</button>
+        <div className="tab-row cm-tabs" role="group" aria-label="Channels">
+          {[...Object.entries(CHANNELS), ["", "All channels"]].map(([k, v]) => (
+            <button key={k || "all"} type="button" className={channel === k ? "tab-btn active" : "tab-btn"} aria-pressed={channel === k}
+              onClick={() => { setChannel(k); if (k) setDraft({ ...draft, channel: k }); }}>{v}</button>
           ))}
         </div>
         {posts.length === 0 ? (
@@ -365,7 +378,7 @@ function CommunityRoom() {
             {posts.map((p) => (
               <li key={p.id}>
                 <button type="button" className="cm-card cm-item" onClick={() => { clearMessages(); setOpenId(p.id); }}>
-                  <span className="cm-meta"><span className="cm-topic">{TOPICS[p.topic]}</span><Status item={p} /></span>
+                  <span className="cm-meta"><span className="cm-topic">{channel ? TOPICS[p.topic] : `${CHANNELS[p.channel] || ""} · ${TOPICS[p.topic]}`}</span><Status item={p} /></span>
                   <strong className="cm-title">{p.title}</strong>
                   <span className="cm-preview">{p.preview}{p.preview.length >= 180 ? "…" : ""}</span>
                   <span className="cm-meta">
@@ -385,7 +398,8 @@ function CommunityRoom() {
 
   return (
     <section className="link-check community-room" id="community">
-      <h2>{BRAND} Community</h2>
+      <h2>CashCow Community</h2>
+      <p className="subtext">One community for every CashCow app. <a href={COMMUNITY_URL} target="_blank" rel="noopener noreferrer">Open the full community</a></p>
       <div ref={msgRef}>
         {note && <p className="cm-note" role="status">{note}</p>}
         {error && !formShowsError && <p className="error">{error}</p>}
