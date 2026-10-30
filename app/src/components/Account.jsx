@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase, useAuth } from "../utils/auth";
 
 const BRAND = "ScamShield";
@@ -10,6 +10,13 @@ function Account() {
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // A password-reset link lands here: jump to this box so the new-password form is easy to find.
+  useEffect(() => {
+    if (!recovering) return;
+    const el = document.getElementById("account");
+    if (el) setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 300);
+  }, [recovering]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -62,7 +69,9 @@ function Account() {
   }
 
   return (
-    <section className="link-check account-box" id="account">
+    <section className="link-check account-box" id="account"
+      style={recovering ? { border: "3px solid #f2b705", background: "#fffbe8", borderRadius: 18, scrollMarginTop: 16 } : undefined}>
+      {recovering && <p style={{ display: "inline-block", margin: "0 0 8px", background: "#f2b705", color: "#3a2a00", fontWeight: 900, borderRadius: 999, padding: "4px 12px" }}>👉 Set your new password here</p>}
       <h2>Your {BRAND} Account</h2>
 
       {!ready ? (
