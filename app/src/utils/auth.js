@@ -8,11 +8,15 @@ import { createClient } from "@supabase/supabase-js";
 const URL = (import.meta.env.VITE_SUPABASE_URL || "").trim();
 const KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY || "").trim();
 
+// Read this before the Supabase client starts: it clears the link details from the address bar,
+// and the "password recovery" event can fire before the page is listening for it.
+const OPENED_FROM_RESET = typeof window !== "undefined" && /type=recovery/.test(window.location.hash + window.location.search);
+
 export const supabase = URL && KEY ? createClient(URL, KEY, { auth: { persistSession: true, autoRefreshToken: true } }) : null;
 
 export function useAuth() {
   const [session, setSession] = useState(null);
-  const [recovering, setRecovering] = useState(false);
+  const [recovering, setRecovering] = useState(OPENED_FROM_RESET);
   const [ready, setReady] = useState(!supabase);
 
   useEffect(() => {
