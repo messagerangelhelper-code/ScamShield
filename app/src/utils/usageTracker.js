@@ -82,3 +82,15 @@ export function remainingChecks() {
   const { count, premium } = getUsage();
   return premium ? Infinity : Math.max(0, FREE_LIMIT - count);
 }
+
+// Turned on when a ScamShield Premium or CashCow All Access purchase is confirmed.
+export function setPremium(on) {
+  const stored = getUsage();
+  stored.premium = !!on;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(stored));
+  } catch {
+    /* ignore */
+  }
+  window.dispatchEvent(new Event("stats-change"));
+}
