@@ -131,7 +131,7 @@ function BreachCheck() {
       <form onSubmit={check}>
         <label className="field-label" htmlFor="exposure-email">Your email address</label>
         <input id="exposure-email" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off"
-          placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          placeholder="Type your email to see if it was leaked" value={email} onChange={(e) => setEmail(e.target.value)} />
         <button type="submit" disabled={busy}>{busy ? "Checking..." : "Check my email"}</button>
       </form>
       {error && <p className="error">{error}</p>}
@@ -200,7 +200,7 @@ function PasswordCheck() {
     <>
       <form onSubmit={check}>
         <label className="field-label" htmlFor="exposure-pw">A password you use</label>
-        <input id="exposure-pw" type="password" autoComplete="off" value={pw} onChange={(e) => setPw(e.target.value)} />
+        <input id="exposure-pw" type="password" autoComplete="off" placeholder="Type a password to see if it was leaked" value={pw} onChange={(e) => setPw(e.target.value)} />
         <button type="submit" disabled={busy}>{busy ? "Checking..." : "Check password"}</button>
       </form>
       <p className="subtext">Your password never leaves this phone. Only a scrambled piece of it is checked.</p>
